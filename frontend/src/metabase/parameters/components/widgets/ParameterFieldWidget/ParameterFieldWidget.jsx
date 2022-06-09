@@ -97,7 +97,9 @@ export default function ParameterFieldWidget({
           onClick={() => {
             setValue(unsavedValue);
           }}
-        >{t`Update filter`}</UpdateButton>
+        >
+          {unsavedValue.length === 0 ? t`Add filter` : t`Update filter`}
+        </UpdateButton>
       </Footer>
     </WidgetRoot>
   );
