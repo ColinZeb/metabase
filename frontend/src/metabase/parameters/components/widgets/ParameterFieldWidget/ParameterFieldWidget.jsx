@@ -75,9 +75,7 @@ export default function ParameterFieldWidget({
               parameter={parameter}
               parameters={parameters}
               onChange={onValueChange}
-              placeholder={
-                isEditing ? t`Enter a default value...` : placeholder
-              }
+              placeholder={isEditing ? t`Enter a default value...` : undefined}
               fields={fields}
               autoFocus={index === 0}
               multi={multi}
