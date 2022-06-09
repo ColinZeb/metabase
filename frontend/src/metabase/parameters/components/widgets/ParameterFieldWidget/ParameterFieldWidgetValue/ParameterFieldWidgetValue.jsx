@@ -13,8 +13,8 @@ function renderNumberOfSelections(numberOfSelections) {
   );
 }
 
-export default function ParameterFieldWidgetValue({ savedValue, fields }) {
-  const values = normalizeValue(savedValue);
+export default function ParameterFieldWidgetValue({ value, fields }) {
+  const values = normalizeValue(value);
 
   const numberOfValues = values.length;
 
@@ -23,13 +23,13 @@ export default function ParameterFieldWidgetValue({ savedValue, fields }) {
   const shouldRemap = fields.length === 1;
 
   return numberOfValues > 1 ? (
-    renderNumberOfSelections(numberOfValues)
+    <>{renderNumberOfSelections(numberOfValues)}</>
   ) : (
-    <Value remap={shouldRemap} value={savedValue[0]} column={fields[0]} />
+    <Value remap={shouldRemap} value={value[0]} column={fields[0]} />
   );
 }
 
 ParameterFieldWidgetValue.propTypes = {
-  savedValue: PropTypes.array,
+  value: PropTypes.array,
   fields: PropTypes.array,
 };
