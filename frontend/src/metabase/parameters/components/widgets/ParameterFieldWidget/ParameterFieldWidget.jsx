@@ -45,6 +45,7 @@ export default function ParameterFieldWidget({
   const { numFields = 1, multi = false, verboseName } = operator || {};
   const isEqualsOp = isEqualsOperator(operator);
   const disableSearch = operator && isFuzzyOperator(operator);
+  const hasValue = Array.isArray(value) ? value.length > 0 : value != null;
 
   const isValid =
     unsavedValue.every(value => value != null) &&
@@ -98,7 +99,7 @@ export default function ParameterFieldWidget({
             setValue(unsavedValue);
           }}
         >
-          {unsavedValue.length === 0 ? t`Add filter` : t`Update filter`}
+          {hasValue ? t`Update filter` : t`Add filter`}
         </UpdateButton>
       </Footer>
     </WidgetRoot>
