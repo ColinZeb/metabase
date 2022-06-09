@@ -52,6 +52,7 @@ type State = {
   filter: Filter | null;
   choosingField: boolean;
   editingFilter: boolean;
+  committedFilter: boolean;
 };
 
 // NOTE: this is duplicated from FilterPopover but allows you to add filters on
@@ -70,6 +71,7 @@ export default class FilterPopover extends Component<Props, State> {
     this.state = {
       filter: filter,
       choosingField: !filter,
+      committedFilter: false,
       editingFilter: filter
         ? filter.isCustom() && !isStartingFrom(filter)
         : false,
@@ -87,7 +89,10 @@ export default class FilterPopover extends Component<Props, State> {
   }
 
   componentWillUnmount() {
-    this.props.commitOnBlur && this.handleCommit();
+    if (this.props.commitOnBlur && !this.state.committedFilter) {
+      // only update filters that haven't already been committed
+      this.handleCommit();
+    }
   }
 
   setFilter(filter: Filter, hideShortcuts = true) {
@@ -119,6 +124,7 @@ export default class FilterPopover extends Component<Props, State> {
       filter = new Filter(filter, null, query);
     }
     if (filter && filter.isValid() && this.props.onChangeFilter) {
+      this.setState({ committedFilter: true });
       this.props.onChangeFilter(filter);
       if (this.props.onClose) {
         this.props.onClose();
