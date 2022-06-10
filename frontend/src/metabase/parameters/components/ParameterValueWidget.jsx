@@ -142,7 +142,7 @@ class ParameterValueWidget extends Component {
       const placeholderText = isEditing
         ? isDateParameter(parameter)
           ? t`Select a default value…`
-          : t`Enter a default value…`
+          : t`Enter a default value...`
         : placeholder || t`Select…`;
 
       return (
