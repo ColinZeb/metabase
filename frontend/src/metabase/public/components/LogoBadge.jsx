@@ -6,7 +6,7 @@ import ExternalLink from "metabase/core/components/ExternalLink";
 import { t, jt } from "ttag";
 
 const LogoBadge = ({ dark }) => (
-  <div></div>
+  <div>2022</div>
 );
 
 export default LogoBadge;
