@@ -5,7 +5,7 @@ import LogoIcon from "metabase/components/LogoIcon";
 import ExternalLink from "metabase/core/components/ExternalLink";
 
 const LogoBadge = ({ dark }) => (
-  <div></div>
+  <div>2022</div>
 );
 
 export default LogoBadge;
