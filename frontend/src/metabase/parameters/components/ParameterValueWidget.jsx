@@ -7,6 +7,7 @@ import _ from "underscore";
 import { getParameterIconName } from "metabase/parameters/utils/ui";
 import { isDashboardParameterWithoutMapping } from "metabase/parameters/utils/dashboards";
 import { isOnlyMappedToFields } from "metabase/parameters/utils/fields";
+import { isDateParameter } from "metabase/parameters/utils/parameter-type";
 import PopoverWithTrigger from "metabase/components/PopoverWithTrigger";
 import Icon from "metabase/components/Icon";
 import DateSingleWidget from "metabase/components/DateSingleWidget";
@@ -139,7 +140,9 @@ class ParameterValueWidget extends Component {
       );
     } else {
       const placeholderText = isEditing
-        ? t`Select a default value…`
+        ? isDateParameter(parameter)
+          ? t`Select a default value…`
+          : t`Enter a default value…`
         : placeholder || t`Select…`;
 
       return (
