@@ -20,8 +20,7 @@ import {
   ExpressionReference,
   DatetimeUnit,
 } from "metabase-types/types/Query";
-import {
-  ValidationError,
+import ValidationError, {
   VALIDATION_ERROR_TYPES,
 } from "metabase-lib/lib/ValidationError";
 import { IconName } from "metabase-types/types";
@@ -968,7 +967,7 @@ export class FieldDimension extends Dimension {
     const field = this.field();
 
     // Add FK dimensions if this field is an FK
-    if (field.target && field.target.table && field.target.table.fields) {
+    if (field.target?.table?.fields) {
       const fkDimensions = field.target.table.fields.map(
         field =>
           new FieldDimension(
@@ -1084,12 +1083,7 @@ export class FieldDimension extends Dimension {
 
     if (this.fk()) {
       const fkDisplayName =
-        this.fk() &&
-        stripId(
-          this.fk()
-            .field()
-            .displayName(),
-        );
+        this.fk() && stripId(this.fk().field().displayName());
       displayName = `${fkDisplayName} ${FK_SYMBOL} ${displayName}`;
     } else if (this.joinAlias()) {
       displayName = `${this.joinAlias()} ${FK_SYMBOL} ${displayName}`;

@@ -1,4 +1,4 @@
-import { restore } from "__support__/e2e/cypress";
+import { restore } from "__support__/e2e/helpers";
 
 const MONGO_DB_ID = 2;
 
@@ -6,7 +6,7 @@ const questionDetails = {
   name: "22822",
   database: MONGO_DB_ID,
   native: {
-    query: '[{"$limit": 2}]',
+    query: '[{"$sort": {"id": 1}}, {"$limit": 2}]',
     collection: "products",
   },
 };

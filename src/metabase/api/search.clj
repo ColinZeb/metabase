@@ -5,8 +5,10 @@
             [flatland.ordered.map :as ordered-map]
             [honeysql.core :as hsql]
             [honeysql.helpers :as hh]
+            [medley.core :as m]
             [metabase.api.common :as api]
             [metabase.db :as mdb]
+            [metabase.models :refer [Database]]
             [metabase.models.bookmark :refer [CardBookmark CollectionBookmark DashboardBookmark]]
             [metabase.models.collection :as collection :refer [Collection]]
             [metabase.models.interface :as mi]
@@ -144,7 +146,7 @@
   missing from `entity-columns` but found in `all-search-columns`."
   [model :- SearchableModel]
   (let [entity-columns                (search-config/columns-for-model model)
-        column-alias->honeysql-clause (u/key-by ->column-alias entity-columns)
+        column-alias->honeysql-clause (m/index-by ->column-alias entity-columns)
         cols-or-nils                  (canonical-columns model column-alias->honeysql-clause)]
     cols-or-nils))
 
@@ -370,6 +372,10 @@
   [{:keys [id]}]
   (-> id Segment mi/can-read?))
 
+(defmethod check-permissions-for-model :database
+  [{:keys [id]}]
+  (-> id Database mi/can-read?))
+
 (defn- query-model-set
   "Queries all models with respect to query for one result, to see if we get a result or not"
   [search-ctx]
@@ -419,15 +425,15 @@
       ;; We get to do this slicing and dicing with the result data because
       ;; the pagination of search is for UI improvement, not for performance.
       ;; We intend for the cardinality of the search results to be below the default max before this slicing occurs
-      {:total             (count total-results)
-       :data              (cond->> total-results
-                            (some?     (:offset-int search-ctx)) (drop (:offset-int search-ctx))
-                            (some?     (:limit-int search-ctx)) (take (:limit-int search-ctx)))
-       :available_models  (query-model-set search-ctx)
-       :limit             (:limit-int search-ctx)
-       :offset            (:offset-int search-ctx)
-       :table_db_id       (:table-db-id search-ctx)
-       :models            (:models search-ctx)})))
+      {:total            (count total-results)
+       :data             (cond->> total-results
+                           (some?     (:offset-int search-ctx)) (drop (:offset-int search-ctx))
+                           (some?     (:limit-int search-ctx)) (take (:limit-int search-ctx)))
+       :available_models (query-model-set search-ctx)
+       :limit            (:limit-int search-ctx)
+       :offset           (:offset-int search-ctx)
+       :table_db_id      (:table-db-id search-ctx)
+       :models           (:models search-ctx)})))
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                                    Endpoint                                                    |

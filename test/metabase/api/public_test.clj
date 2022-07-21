@@ -9,6 +9,7 @@
             [metabase.api.public :as api.public]
             [metabase.http-client :as client]
             [metabase.models :refer [Card Collection Dashboard DashboardCard DashboardCardSeries Dimension Field FieldValues]]
+            [metabase.models.params.chain-filter-test :as chain-filter-test]
             [metabase.models.permissions :as perms]
             [metabase.models.permissions-group :as perms-group]
             [metabase.test :as mt]
@@ -721,23 +722,25 @@
 
 (deftest we-should-be-able-to-get-values-for-a-field-referenced-by-a-card
   (mt/with-temp Card [card (mbql-card-referencing :venues :name)]
-    (is (= {:values   [["20th Century Cafe"]
-                       ["25°"]
-                       ["33 Taps"]
-                       ["800 Degrees Neapolitan Pizzeria"]
-                       ["BCD Tofu House"]]
-            :field_id (mt/id :venues :name)}
+    (is (= {:values          [["20th Century Cafe"]
+                              ["25°"]
+                              ["33 Taps"]
+                              ["800 Degrees Neapolitan Pizzeria"]
+                              ["BCD Tofu House"]]
+            :field_id        (mt/id :venues :name)
+            :has_more_values false}
            (mt/derecordize (-> (api.public/card-and-field-id->values (u/the-id card) (mt/id :venues :name))
                                (update :values (partial take 5))))))))
 
 (deftest sql-param-field-references-should-work-just-as-well-as-mbql-field-referenced
   (mt/with-temp Card [card (sql-card-referencing-venue-name)]
-    (is (= {:values   [["20th Century Cafe"]
-                       ["25°"]
-                       ["33 Taps"]
-                       ["800 Degrees Neapolitan Pizzeria"]
-                       ["BCD Tofu House"]]
-            :field_id (mt/id :venues :name)}
+    (is (= {:values          [["20th Century Cafe"]
+                              ["25°"]
+                              ["33 Taps"]
+                              ["800 Degrees Neapolitan Pizzeria"]
+                              ["BCD Tofu House"]]
+            :field_id        (mt/id :venues :name)
+            :has_more_values false}
            (mt/derecordize (-> (api.public/card-and-field-id->values (u/the-id card) (mt/id :venues :name))
                                (update :values (partial take 5))))))))
 
@@ -774,12 +777,13 @@
 
 
 (deftest should-be-able-to-fetch-values-for-a-field-referenced-by-a-public-card
-  (is (= {:values   [["20th Century Cafe"]
-                     ["25°"]
-                     ["33 Taps"]
-                     ["800 Degrees Neapolitan Pizzeria"]
-                     ["BCD Tofu House"]]
-          :field_id (mt/id :venues :name)}
+  (is (= {:values          [["20th Century Cafe"]
+                            ["25°"]
+                            ["33 Taps"]
+                            ["800 Degrees Neapolitan Pizzeria"]
+                            ["BCD Tofu House"]]
+          :field_id        (mt/id :venues :name)
+          :has_more_values false}
          (with-sharing-enabled-and-temp-card-referencing :venues :name [card]
            (-> (client/client :get 200 (field-values-url card (mt/id :venues :name)))
                (update :values (partial take 5)))))))
@@ -818,12 +822,13 @@
 
 (deftest should-be-able-to-use-it-when-everything-is-g2g
   (with-sharing-enabled-and-temp-dashcard-referencing :venues :name [dashboard]
-    (is (= {:values   [["20th Century Cafe"]
-                       ["25°"]
-                       ["33 Taps"]
-                       ["800 Degrees Neapolitan Pizzeria"]
-                       ["BCD Tofu House"]]
-            :field_id (mt/id :venues :name)}
+    (is (= {:values          [["20th Century Cafe"]
+                              ["25°"]
+                              ["33 Taps"]
+                              ["800 Degrees Neapolitan Pizzeria"]
+                              ["BCD Tofu House"]]
+            :field_id        (mt/id :venues :name)
+            :has_more_values false}
            (-> (client/client :get 200 (field-values-url dashboard (mt/id :venues :name)))
                (update :values (partial take 5)))))))
 
@@ -1001,12 +1006,14 @@
                (db/update! Dashboard (u/the-id dashboard) :public_uuid uuid)))
         (testing "GET /api/public/dashboard/:uuid/params/:param-key/values"
           (let [url (format "public/dashboard/%s/params/%s/values" uuid (:category-id param-keys))]
-            (is (= [2 3 4 5 6]
-                   (take 5 (client/client :get 200 url))))))
+            (is (= {:values          [2 3 4 5 6]
+                    :has_more_values false}
+                   (chain-filter-test/take-n-values 5 (client/client :get 200 url))))))
         (testing "GET /api/public/dashboard/:uuid/params/:param-key/search/:query"
           (let [url (format "public/dashboard/%s/params/%s/search/food" uuid (:category-name param-keys))]
-            (is (= ["Fast Food" "Food Truck" "Seafood"]
-                   (take 3 (client/client :get 200 url))))))))))
+            (is (= {:values          ["Fast Food" "Food Truck" "Seafood"]
+                    :has_more_values false}
+                   (chain-filter-test/take-n-values 3 (client/client :get 200 url))))))))))
 
 (deftest chain-filter-ignore-current-user-permissions-test
   (testing "Should not fail if request is authenticated but current user does not have data permissions"
@@ -1019,12 +1026,14 @@
                    (db/update! Dashboard (u/the-id dashboard) :public_uuid uuid)))
             (testing "GET /api/public/dashboard/:uuid/params/:param-key/values"
               (let [url (format "public/dashboard/%s/params/%s/values" uuid (:category-id param-keys))]
-                (is (= [2 3 4 5 6]
-                       (take 5 (mt/user-http-request :rasta :get 200 url))))))
+                (is (= {:values          [2 3 4 5 6]
+                        :has_more_values false}
+                       (chain-filter-test/take-n-values 5 (mt/user-http-request :rasta :get 200 url))))))
             (testing "GET /api/public/dashboard/:uuid/params/:param-key/search/:prefix"
               (let [url (format "public/dashboard/%s/params/%s/search/food" uuid (:category-name param-keys))]
-                (is (= ["Fast Food" "Food Truck" "Seafood"]
-                       (take 3 (mt/user-http-request :rasta :get 200 url))))))))))))
+                (is (= {:values          ["Fast Food" "Food Truck" "Seafood"]
+                        :has_more_values false}
+                       (chain-filter-test/take-n-values 3 (mt/user-http-request :rasta :get 200 url))))))))))))
 
 ;; Pivot tables
 

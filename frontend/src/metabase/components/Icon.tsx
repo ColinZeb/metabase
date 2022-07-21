@@ -23,7 +23,7 @@ export const IconWrapper = styled.div<IconWrapperProps>`
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 99px;
+  border-radius: 6px;
   cursor: pointer;
   color: ${props => (props.open ? c("brand") : "inherit")};
   // special cases for certain icons
@@ -34,9 +34,9 @@ export const IconWrapper = styled.div<IconWrapperProps>`
   }
 
   &:hover {
-    color: ${({ hover }) => hover?.color ?? color("brand")};
+    color: ${({ hover }) => hover?.color ?? c("brand")};
     background-color: ${({ hover }) =>
-      hover?.backgroundColor ?? color("bg-medium")};
+      hover?.backgroundColor ?? c("bg-medium")};
   }
 
   transition: all 300ms ease-in-out;
@@ -61,6 +61,7 @@ export const iconPropTypes = {
   tooltip: PropTypes.string,
   className: PropTypes.string,
   onClick: PropTypes.func,
+  style: PropTypes.object,
 };
 
 export type IconProps = PropTypes.InferProps<typeof iconPropTypes> & {

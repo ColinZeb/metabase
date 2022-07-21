@@ -80,7 +80,12 @@
     (let [arr-row   {:bob [:bob :cob :dob 123 "blob"]}
           obj-row   {:zlob {"blob" 1323}}]
       (is (= {} (#'sql-jdbc.describe-table/row->types arr-row)))
-      (is (= {[:zlob "blob"] java.lang.Long} (#'sql-jdbc.describe-table/row->types obj-row))))))
+      (is (= {[:zlob "blob"] java.lang.Long} (#'sql-jdbc.describe-table/row->types obj-row)))))
+  (testing "JSON row->types handles bigint OK (#21752)"
+    (let [int-row   {:zlob {"blob" 123N}}
+          float-row {:zlob {"blob" 1234.02M}}]
+      (is (= {[:zlob "blob"] clojure.lang.BigInt} (#'sql-jdbc.describe-table/row->types int-row)))
+      (is (= {[:zlob "blob"] java.math.BigDecimal} (#'sql-jdbc.describe-table/row->types float-row))))))
 
 (deftest dont-parse-long-json-xform-test
   (testing "obnoxiously long json should not even get parsed (#22636)"
@@ -109,4 +114,15 @@
     (let [row   {:bob {:dobbs {:robbs 123} :cobbs [1 2 3]}}
           types {[:bob :cobbs] clojure.lang.PersistentVector
                  [:bob :dobbs :robbs] java.lang.Long}]
-      (is (= types (#'sql-jdbc.describe-table/row->types row))))))
+      (is (= types (#'sql-jdbc.describe-table/row->types row)))))
+  (testing "JSON row->types handles bigint that comes in and gets interpreted as Java bigint OK (#22732)"
+    (let [int-row   {:zlob {"blob" (java.math.BigInteger. "123124124312134235234235345344324352")}}]
+      (is (= #{{:name "zlob → blob",
+                :database-type "decimal",
+                :base-type :type/BigInteger,
+                :database-position 0,
+                :visibility-type :normal,
+                :nfc-path [:zlob "blob"]}}
+             (-> int-row
+                 (#'sql-jdbc.describe-table/row->types)
+                 (#'sql-jdbc.describe-table/field-types->fields)))))))

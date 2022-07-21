@@ -1,30 +1,35 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback } from "react";
 import { t } from "ttag";
+import { connect } from "react-redux";
 
 import Button from "metabase/core/components/Button";
 import Tooltip from "metabase/components/Tooltip";
-import TippyPopoverWithTrigger from "metabase/components/PopoverWithTrigger/TippyPopoverWithTrigger";
+import EntityMenu from "metabase/components/EntityMenu";
 
-import DatasetMetadataStrengthIndicator from "./view/sidebars/DatasetManagementSection/DatasetMetadataStrengthIndicator/DatasetMetadataStrengthIndicator";
-
-import { PLUGIN_MODERATION } from "metabase/plugins";
+import { PLUGIN_MODERATION, PLUGIN_MODEL_PERSISTENCE } from "metabase/plugins";
 
 import { MODAL_TYPES } from "metabase/query_builder/constants";
 
+import { softReloadCard } from "metabase/query_builder/actions";
+import { getUserIsAdmin } from "metabase/selectors/user";
+
+import { State } from "metabase-types/store";
 import { color } from "metabase/lib/colors";
-import { checkCanBeModel } from "metabase/lib/data-modeling/utils";
+import {
+  checkCanBeModel,
+  checkDatabaseCanPersistDatasets,
+} from "metabase/lib/data-modeling/utils";
 
 import Question from "metabase-lib/lib/Question";
 
 import {
-  QuestionActionsContainer,
-  PopoverContainer,
-  PopoverButton,
-  BookmarkButton,
-  AnimationStates,
+  QuestionActionsDivider,
+  StrengthIndicator,
 } from "./QuestionActions.styled";
+import BookmarkToggle from "metabase/core/components/BookmarkToggle";
+import { ViewHeaderIconButtonContainer } from "./view/ViewHeader.styled";
 
-const ICON_SIZE = 18;
+const HEADER_ICON_SIZE = 16;
 
 const ADD_TO_DASH_TESTID = "add-to-dashboard-button";
 const MOVE_TESTID = "move-button";
@@ -33,8 +38,17 @@ const TOGGLE_MODEL_PERSISTENCE_TESTID = "toggle-persistence";
 const CLONE_TESTID = "clone-button";
 const ARCHIVE_TESTID = "archive-button";
 
+const mapStateToProps = (state: State, props: Props) => ({
+  isModerator: getUserIsAdmin(state),
+});
+
+const mapDispatchToProps = {
+  softReloadCard,
+};
+
 interface Props {
   isBookmarked: boolean;
+  isShowingQuestionInfoSidebar: boolean;
   handleBookmark: () => void;
   onOpenModal: (modalType: string) => void;
   question: Question;
@@ -43,33 +57,41 @@ interface Props {
     opt: { datasetEditorTab: string },
   ) => void;
   turnDatasetIntoQuestion: () => void;
+  onInfoClick: () => void;
+  onModelPersistenceChange: () => void;
+  isModerator: boolean;
+  softReloadCard: () => void;
 }
-
-const buttonProps = {
-  iconSize: ICON_SIZE,
-  borderless: true,
-  color: color("text-dark"),
-};
 
 const QuestionActions = ({
   isBookmarked,
+  isShowingQuestionInfoSidebar,
   handleBookmark,
   onOpenModal,
   question,
   setQueryBuilderMode,
   turnDatasetIntoQuestion,
+  onInfoClick,
+  onModelPersistenceChange,
+  isModerator,
+  softReloadCard,
 }: Props) => {
-  const [animation, setAnimation] = useState<AnimationStates>(null);
-
-  const handleClickBookmark = () => {
-    handleBookmark();
-    setAnimation(isBookmarked ? "shrink" : "expand");
-  };
-  const bookmarkButtonColor = isBookmarked ? color("brand") : "";
   const bookmarkTooltip = isBookmarked ? t`Remove from bookmarks` : t`Bookmark`;
+
+  const infoButtonColor = isShowingQuestionInfoSidebar
+    ? color("brand")
+    : undefined;
 
   const isDataset = question.isDataset();
   const canWrite = question.canWrite();
+  const isSaved = question.isSaved();
+
+  const canPersistDataset =
+    PLUGIN_MODEL_PERSISTENCE.isModelLevelPersistenceEnabled() &&
+    canWrite &&
+    isSaved &&
+    isDataset &&
+    checkDatabaseCanPersistDatasets(question.query().database());
 
   const handleEditQuery = useCallback(() => {
     setQueryBuilderMode("dataset", {
@@ -90,142 +112,115 @@ const QuestionActions = ({
     onOpenModal(modal);
   }, [onOpenModal, question]);
 
+  const extraButtons = [];
+
+  extraButtons.push(
+    PLUGIN_MODERATION.getMenuItems(question, isModerator, softReloadCard),
+  );
+
+  if (isDataset) {
+    extraButtons.push(
+      {
+        title: t`Edit query definition`,
+        icon: "notebook",
+        action: handleEditQuery,
+      },
+      {
+        title: (
+          <div>
+            {t`Edit metadata`} <StrengthIndicator dataset={question} />
+          </div>
+        ),
+        icon: "label",
+        action: handleEditMetadata,
+      },
+    );
+  }
+
+  if (canPersistDataset) {
+    extraButtons.push({
+      ...PLUGIN_MODEL_PERSISTENCE.getMenuItems(
+        question,
+        onModelPersistenceChange,
+      ),
+      testId: TOGGLE_MODEL_PERSISTENCE_TESTID,
+    });
+  }
+
+  if (!isDataset) {
+    extraButtons.push({
+      title: t`Add to dashboard`,
+      icon: "dashboard",
+      action: () => onOpenModal(MODAL_TYPES.ADD_TO_DASHBOARD),
+      testId: ADD_TO_DASH_TESTID,
+    });
+  }
+
+  if (canWrite) {
+    extraButtons.push({
+      title: t`Move`,
+      icon: "move",
+      action: () => onOpenModal(MODAL_TYPES.MOVE),
+      testId: MOVE_TESTID,
+    });
+    if (!isDataset) {
+      extraButtons.push({
+        title: t`Turn into a model`,
+        icon: "model",
+        action: handleTurnToModel,
+        testId: TURN_INTO_DATASET_TESTID,
+      });
+    }
+    if (isDataset) {
+      extraButtons.push({
+        title: t`Turn back to saved question`,
+        icon: "model_framed",
+        action: turnDatasetIntoQuestion,
+      });
+    }
+    extraButtons.push({
+      title: t`Duplicate`,
+      icon: "segment",
+      action: () => onOpenModal(MODAL_TYPES.CLONE),
+      testId: CLONE_TESTID,
+    });
+    extraButtons.push({
+      title: t`Archive`,
+      icon: "view_archive",
+      action: () => onOpenModal(MODAL_TYPES.ARCHIVE),
+      testId: ARCHIVE_TESTID,
+    });
+  }
+
   return (
-    <QuestionActionsContainer data-testid="question-action-buttons-container">
+    <>
+      <QuestionActionsDivider />
       <Tooltip tooltip={bookmarkTooltip}>
-        <BookmarkButton
-          animation={animation}
+        <BookmarkToggle
+          onCreateBookmark={handleBookmark}
+          onDeleteBookmark={handleBookmark}
           isBookmarked={isBookmarked}
-          onlyIcon
-          icon="bookmark"
-          iconSize={ICON_SIZE}
-          onClick={handleClickBookmark}
-          color={bookmarkButtonColor}
         />
       </Tooltip>
-
-      <TippyPopoverWithTrigger
-        key="extra-actions-menu"
-        placement="bottom-end"
-        renderTrigger={({ onClick }) => (
+      <Tooltip tooltip={t`More info`}>
+        <ViewHeaderIconButtonContainer>
           <Button
-            onClick={onClick}
             onlyIcon
-            icon="ellipsis"
-            iconSize={ICON_SIZE}
+            icon="info"
+            iconSize={HEADER_ICON_SIZE}
+            onClick={onInfoClick}
+            color={infoButtonColor}
+            data-testId="qb-header-info-button"
           />
-        )}
-        popoverContent={
-          <PopoverContainer>
-            <div>
-              <PLUGIN_MODERATION.QuestionModerationButton
-                question={question}
-                VerifyButton={PopoverButton}
-                verifyButtonProps={buttonProps}
-              />
-            </div>
-            {isDataset && (
-              <div>
-                <PopoverButton
-                  icon="notebook"
-                  onClick={handleEditQuery}
-                  data-testid={ADD_TO_DASH_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Edit query definition`}
-                </PopoverButton>
-              </div>
-            )}
-            {isDataset && (
-              <div>
-                <PopoverButton
-                  icon="label"
-                  onClick={handleEditMetadata}
-                  data-testid={ADD_TO_DASH_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Edit metadata`}
-                  <DatasetMetadataStrengthIndicator dataset={question} />
-                </PopoverButton>
-              </div>
-            )}
-            {!isDataset && (
-              <div>
-                <PopoverButton
-                  icon="dashboard"
-                  onClick={() => onOpenModal(MODAL_TYPES.ADD_TO_DASHBOARD)}
-                  data-testid={ADD_TO_DASH_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Add to dashboard`}
-                </PopoverButton>
-              </div>
-            )}
-            {canWrite && (
-              <div>
-                <PopoverButton
-                  icon="move"
-                  onClick={() => onOpenModal(MODAL_TYPES.MOVE)}
-                  data-testid={MOVE_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Move`}
-                </PopoverButton>
-              </div>
-            )}
-            {!isDataset && canWrite && (
-              <div>
-                <PopoverButton
-                  icon="model"
-                  onClick={handleTurnToModel}
-                  data-testid={TURN_INTO_DATASET_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Turn into a model`}
-                </PopoverButton>
-              </div>
-            )}
-            {isDataset && canWrite && (
-              <div>
-                <PopoverButton
-                  icon="model_framed"
-                  onClick={turnDatasetIntoQuestion}
-                  data-testid=""
-                  {...buttonProps}
-                >
-                  {t`Turn back to saved question`}
-                </PopoverButton>
-              </div>
-            )}
-            {canWrite && (
-              <div>
-                <PopoverButton
-                  icon="segment"
-                  onClick={() => onOpenModal(MODAL_TYPES.CLONE)}
-                  data-testid={CLONE_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Duplicate`}
-                </PopoverButton>
-              </div>
-            )}
-            {canWrite && (
-              <div>
-                <PopoverButton
-                  icon="archive"
-                  onClick={() => onOpenModal(MODAL_TYPES.ARCHIVE)}
-                  data-testid={ARCHIVE_TESTID}
-                  {...buttonProps}
-                >
-                  {t`Archive`}
-                </PopoverButton>
-              </div>
-            )}
-          </PopoverContainer>
-        }
+        </ViewHeaderIconButtonContainer>
+      </Tooltip>
+      <EntityMenu
+        items={extraButtons}
+        triggerIcon="ellipsis"
+        tooltip={t`Move, archive, and more...`}
       />
-    </QuestionActionsContainer>
+    </>
   );
 };
 
-export default QuestionActions;
+export default connect(mapStateToProps, mapDispatchToProps)(QuestionActions);

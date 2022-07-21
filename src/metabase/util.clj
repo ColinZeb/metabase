@@ -40,6 +40,15 @@
     s
     (str s ".")))
 
+(defn capitalize-first-char
+  "Like string/capitalize, only it ignores the rest of the string
+  to retain case-sensitive capitalization, e.g., PostgreSQL."
+  [s]
+  (if (< (count s) 2)
+    (str/upper-case s)
+    (str (str/upper-case (subs s 0 1))
+         (subs s 1))))
+
 (defn lower-case-en
   "Locale-agnostic version of `clojure.string/lower-case`.
   `clojure.string/lower-case` uses the default locale in conversions, turning
@@ -79,25 +88,6 @@
   {:style/indent 0}
   [& body]
   `(try ~@body (catch Throwable ~'_)))
-
-(defn optional
-  "Helper function for defining functions that accept optional arguments. If `pred?` is true of the first item in `args`,
-  a pair like `[first-arg other-args]` is returned; otherwise, a pair like `[default other-args]` is returned.
-
-  If `default` is not specified, `nil` will be returned when `pred?` is false.
-
-    (defn
-      ^{:arglists ([key? numbers])}
-      wrap-nums [& args]
-      (let [[k nums] (optional keyword? args :nums)]
-        {k nums}))
-    (wrap-nums 1 2 3)          -> {:nums [1 2 3]}
-    (wrap-nums :numbers 1 2 3) -> {:numbers [1 2 3]}"
-  {:arglists '([pred? args]
-               [pred? args default])}
-  [pred? args & [default]]
-  (if (pred? (first args)) [(first args) (next args)]
-      [default args]))
 
 (defmacro varargs
   "Make a properly-tagged Java interop varargs argument. This is basically the same as `into-array` but properly tags
@@ -489,17 +479,6 @@
   [num-retries & body]
   `(do-with-auto-retries ~num-retries
      (fn [] ~@body)))
-
-(defn key-by
-  "Convert a sequential `coll` to a map of `(f item)` -> `item`.
-  This is similar to `group-by`, but the resultant map's values are single items from `coll` rather than sequences of
-  items. (Because only a single item is kept for each value of `f`, items producing duplicate values will be
-  discarded).
-
-     (key-by :id [{:id 1, :name :a} {:id 2, :name :b}]) -> {1 {:id 1, :name :a}, 2 {:id 2, :name :b}}"
-  {:style/indent 1}
-  [f coll]
-  (into {} (map (juxt f identity)) coll))
 
 (defn id
   "If passed an integer ID, returns it. If passed a map containing an `:id` key, returns the value if it is an integer.
@@ -974,3 +953,14 @@
   "Generates a random NanoID string. Usually these are used for the entity_id field of various models."
   []
   (nano-id))
+
+(defn pick-first
+  "Returns a pair [match others] where match is the first element of `coll` for which `pred` returns
+  a truthy value and others is a sequence of the other elements of `coll` with the order preserved.
+  Returns nil if no element satisfies `pred`."
+  [pred coll]
+  (loop [xs (seq coll), prefix []]
+    (when-let [[x & xs] xs]
+      (if (pred x)
+        [x (concat prefix xs)]
+        (recur xs (conj prefix x))))))

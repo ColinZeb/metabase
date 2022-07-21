@@ -1,3 +1,7 @@
+---
+title: Metabase documentation
+---
+
 ## Getting started
 
 - [Getting started](/learn/getting-started/getting-started)
@@ -92,6 +96,7 @@
 
 - [Public links for dashboards and questions](./administration-guide/12-public-links.md)
 - [Embedding Metabase in other applications](./administration-guide/13-embedding.md)
+- [Customizing the appearance of embedded items](./enterprise-guide/customize-embeds.md)
 - [Embedding the entire Metabase app in your own web app](./enterprise-guide/full-app-embedding.md)
 - [Embedding example apps](https://github.com/metabase/embedding-reference-apps)
 - [White labeling charts (branding)](./enterprise-guide/whitelabeling.md)
@@ -130,7 +135,7 @@
 
 ## Paid plans
 
-The Enterprise and Pro editions of Metabase offer additional features.
+The Enterprise and Pro plans of Metabase offer additional features.
 
 - [Getting and activating the Enterprise edition](./enterprise-guide/activating-the-enterprise-edition.md)
 - [List of premium features](enterprise-guide/start.md)
