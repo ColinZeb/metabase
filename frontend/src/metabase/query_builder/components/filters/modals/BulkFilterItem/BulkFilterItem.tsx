@@ -1,11 +1,15 @@
 import React, { useMemo, useCallback } from "react";
 
+import { BooleanPickerCheckbox } from "metabase/query_builder/components/filters/pickers/BooleanPicker";
 import Filter from "metabase-lib/lib/queries/structured/Filter";
 import Dimension from "metabase-lib/lib/Dimension";
 import StructuredQuery from "metabase-lib/lib/queries/StructuredQuery";
-import { isBoolean, isString, isNumber } from "metabase/lib/schema_metadata";
+import {
+  isBoolean,
+  isString,
+  isNumber,
+} from "metabase-lib/lib/types/utils/isa";
 
-import { BooleanPickerCheckbox } from "metabase/query_builder/components/filters/pickers/BooleanPicker";
 import { BulkFilterSelect } from "../BulkFilterSelect";
 import { InlineCategoryPicker } from "../InlineCategoryPicker";
 import { InlineValuePicker } from "../InlineValuePicker";
@@ -92,17 +96,15 @@ export const BulkFilterItem = ({
             fieldName={dimension.displayName()}
             value={currentOperator}
             operators={dimension.filterOperators(currentOperator)}
-            iconName="list"
+            iconName={dimension?.icon() ?? undefined}
             tableName={tableName}
             onChange={changeOperator}
           />
           <InlineCategoryPicker
-            query={query}
             filter={filter}
             newFilter={newFilter}
             dimension={dimension}
             onChange={handleChange}
-            onClear={handleClear}
           />
         </>
       );
@@ -174,13 +176,17 @@ const getNewFilter = (query: StructuredQuery, dimension: Dimension): Filter => {
     useDefaultOperator: !isBooleanField,
   });
 
-  const isNumericField = isNumber(field);
+  const isNumericField = isNumber(field) && field.has_field_values !== "list";
   if (isNumericField) {
     filter = filter.setOperator("between");
   }
 
-  const isTextField = isString(field) && field.has_field_values !== "list";
-  if (isTextField) {
+  const isLongTextField =
+    isString(field) &&
+    field.has_field_values !== "list" &&
+    (field.has_field_values === "none" || field.isLongText());
+
+  if (isLongTextField) {
     filter = filter.setOperator("contains");
   }
   return filter;

@@ -265,8 +265,26 @@ class FieldValuesWidgetInner extends Component {
       disablePKRemappingForSearch,
       formatOptions,
       placeholder,
+      forceTokenField = false,
       showOptionsInPopover,
       checkedColor,
+      valueRenderer = value =>
+        renderValue(fields, formatOptions, value, {
+          autoLoad: true,
+          compact: false,
+        }),
+      optionRenderer = option =>
+        renderValue(fields, formatOptions, option[0], {
+          autoLoad: false,
+        }),
+      layoutRenderer = showOptionsInPopover
+        ? undefined
+        : layoutProps => (
+            <div>
+              {layoutProps.valuesList}
+              {renderOptions(this.state, this.props, layoutProps)}
+            </div>
+          ),
     } = this.props;
     const { loadingState, options = [], valuesMode } = this.state;
 
@@ -280,15 +298,13 @@ class FieldValuesWidgetInner extends Component {
       valuesMode,
     });
 
-    const isLoading = loadingState === "LOADING";
-    const usesListField =
+    const isListMode =
       !disableList &&
-      hasList({
-        fields,
-        disableSearch,
-        options,
-      }) &&
-      valuesMode === "list";
+      shouldList(fields, disableSearch) &&
+      valuesMode === "list" &&
+      !forceTokenField;
+    const isLoading = loadingState === "LOADING";
+    const hasListValues = hasList({ fields, disableSearch, options });
 
     return (
       <div
@@ -298,25 +314,19 @@ class FieldValuesWidgetInner extends Component {
           maxWidth: this.props.maxWidth,
         }}
       >
-        {usesListField &&
-          (isLoading ? (
-            <LoadingState />
-          ) : (
-            <ListField
-              isDashboardFilter={parameter}
-              placeholder={tokenFieldPlaceholder}
-              value={value.filter(v => v != null)}
-              onChange={onChange}
-              options={options}
-              optionRenderer={option =>
-                renderValue(fields, formatOptions, option[0], {
-                  autoLoad: false,
-                })
-              }
-              checkedColor={checkedColor}
-            />
-          ))}
-        {!usesListField && (
+        {isListMode && isLoading ? (
+          <LoadingState />
+        ) : isListMode && hasListValues ? (
+          <ListField
+            isDashboardFilter={parameter}
+            placeholder={tokenFieldPlaceholder}
+            value={value.filter(v => v != null)}
+            onChange={onChange}
+            options={options}
+            optionRenderer={optionRenderer}
+            checkedColor={checkedColor}
+          />
+        ) : (
           <TokenField
             prefix={prefix}
             value={value.filter(v => v != null)}
@@ -335,27 +345,9 @@ class FieldValuesWidgetInner extends Component {
             // end forwarded props
             options={options}
             valueKey="0"
-            valueRenderer={value =>
-              renderValue(fields, formatOptions, value, {
-                autoLoad: true,
-                compact: false,
-              })
-            }
-            optionRenderer={option => {
-              return renderValue(fields, formatOptions, option[0], {
-                autoLoad: false,
-              });
-            }}
-            layoutRenderer={
-              showOptionsInPopover
-                ? undefined
-                : layoutProps => (
-                    <div>
-                      {layoutProps.valuesList}
-                      {renderOptions(this.state, this.props, layoutProps)}
-                    </div>
-                  )
-            }
+            valueRenderer={valueRenderer}
+            optionRenderer={optionRenderer}
+            layoutRenderer={layoutRenderer}
             filterOption={(option, filterString) => {
               const lowerCaseFilterString = filterString.toLowerCase();
               return option.some(
@@ -532,18 +524,10 @@ export function isSearchable({
     );
   }
 
-  function everyFieldIsConfiguredToShowValues() {
-    return fields.every(
-      f => f.has_field_values === "search" || f.has_field_values === "list",
-    );
-  }
-
   return (
     !disableSearch &&
     (valuesMode === "search" ||
-      (everyFieldIsSearchable() &&
-        someFieldIsConfiguredForSearch() &&
-        everyFieldIsConfiguredToShowValues()))
+      (everyFieldIsSearchable() && someFieldIsConfiguredForSearch()))
   );
 }
 

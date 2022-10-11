@@ -10,6 +10,7 @@
   If the model is not exported, add it to the exclusion lists in the tests. Every model should be explicitly listed as
   exported or not, and a test enforces this so serialization isn't forgotten for new models."
   (:require [clojure.tools.logging :as log]
+            [metabase.models.interface :as mi]
             [metabase.models.serialization.hash :as serdes.hash]
             [toucan.db :as db]
             [toucan.models :as models]))
@@ -135,7 +136,17 @@
 ;;; Storage:
 ;;; The storage system might transform that stream in some arbitrary way. Storage is a dead end - it should perform side
 ;;; effects like writing to the disk or network, and return nothing.
-
+;;;
+;;; Selective Serialization:
+;;; Sometimes we want to export a "subtree" instead of the complete appdb. At the simplest, we might serialize a single
+;;; question. Moving up, it might be a Dashboard and all its questions, or a Collection and all its content Cards and
+;;; Dashboards.
+;;; There's a relation to be captured here: the *descendants* of an entity are the ones it semantically "contains" (or
+;;; those it needs in order to be executed, such as when questions depend on each other, or NativeQuerySnippets are
+;;; referenced by a SQL question.
+;;;
+;;; (serdes-descendants entity) returns a set of such descendants for the given entity (in its exported form); see that
+;;; multimethod for more details.
 (defmulti extract-all
   "Entry point for extracting all entities of a particular model:
   `(extract-all \"ModelName\" {opts...})`
@@ -221,7 +232,7 @@
   - Convert to a vanilla Clojure map.
   - Add `:serdes/meta` by calling [[serdes-generate-path]].
   - Drop the primary key.
-  - Making :created_at and :updated_at into UTC-based LocalDateTimes.
+  - Drop :updated_at; it's noisy in git and not really used anywhere.
 
   Returns the Clojure map."
   [model-name entity]
@@ -229,7 +240,7 @@
         pk    (models/primary-key model)]
     (-> entity
       (assoc :serdes/meta (serdes-generate-path model-name entity))
-      (dissoc pk))))
+      (dissoc pk :updated_at))))
 
 (defmethod extract-one :default [model-name _opts entity]
   (extract-one-basics model-name entity))
@@ -322,6 +333,7 @@
 
   Keyed on the model name for this entity.
   Default implementation returns an empty vector, so only models that have dependencies need to implement this."
+  {:arglists '([ingested])}
   ingested-model)
 
 (defmethod serdes-dependencies :default [_]
@@ -336,6 +348,7 @@
 
   By default, this just calls [[load-xform-basics]].
   If you override this, call [[load-xform-basics]] as well."
+  {:arglists '([ingested])}
   ingested-model)
 
 (defn load-xform-basics
@@ -360,17 +373,22 @@
   Keyed on the model name (the first argument), because the second argument doesn't have its `:serdes/meta` anymore.
 
   Returns the primary key of the updated entity."
+  {:arglists '([model-name ingested local])}
   (fn [model _ _] model))
 
 (defmethod load-update! :default [model-name ingested local]
-  (let [model (db/resolve-model (symbol model-name))
-        pk    (models/primary-key model)
-        id    (get local pk)]
+  (let [model    (db/resolve-model (symbol model-name))
+        pk       (models/primary-key model)
+        id       (get local pk)
+        adjusted (if (-> model models/properties :timestamped?)
+                   (assoc ingested :updated_at (mi/now))
+                   ingested)]
     (log/tracef "Upserting %s %d: old %s new %s" model-name id (pr-str local) (pr-str ingested))
-    ; Using the two-argument form of [[db/update!]] that takes the model and a HoneySQL form for the actual update.
-    ; It works differently from the more typical `(db/update! 'Model id updates...)` form: this form doesn't run any of
-    ; the pre-update magic, it just updates the database directly.
-    (db/update! (symbol model-name) {:where [:= pk id] :set ingested})
+    ;; Using the two-argument form of [[db/update!]] that takes the model and a HoneySQL form for the actual update.
+    ;; It works differently from the more typical `(db/update! 'Model id updates...)` form: this form doesn't run any of
+    ;; the pre-update magic, it just updates the database directly.
+    ;; Therefore we manually set the :updated_at time.
+    (db/update! model {:where [:= pk id] :set adjusted})
     id))
 
 (defmulti load-insert!
@@ -384,13 +402,19 @@
   Keyed on the model name (the first argument), because the second argument doesn't have its `:serdes/meta` anymore.
 
   Returns the primary key of the newly inserted entity."
+  {:arglists '([model ingested])}
   (fn [model _] model))
 
 (defmethod load-insert! :default [model ingested]
   (log/tracef "Inserting %s: %s" model (pr-str ingested))
   ; Toucan's simple-insert! actually does the right thing for our purposes: it doesn't call pre-insert or post-insert,
   ; and it returns the new primary key.
-  (db/simple-insert! (symbol model) ingested))
+  (let [model    (db/resolve-model (symbol model))
+        adjusted (if (-> model models/properties :timestamped?)
+                   (let [now (mi/now)]
+                     (assoc ingested :created_at now :updated_at now))
+                   ingested)]
+    (db/simple-insert! model adjusted)))
 
 (defmulti load-one!
   "Black box for integrating a deserialized entity into this appdb.
@@ -417,6 +441,39 @@
     (if (nil? maybe-local-id)
       (load-insert! model adjusted)
       (load-update! model adjusted (db/select-one (symbol model) pkey maybe-local-id)))))
+
+(defmulti serdes-descendants
+  "Captures the notion that eg. a dashboard \"contains\" its cards.
+  Returns a set, possibly empty or nil, of `[model-name database-id]` pairs for all entities that this entity contains
+  or requires to be executed.
+  Dispatches on the model name.
+
+  For example:
+  - a `Collection` contains 0 or more other `Collection`s plus many `Card`s and `Dashboard`s;
+  - a `Dashboard` contains its `DashboardCard`s;
+  - each `DashboardCard` contains its `Card`;
+  - a `Card` might stand alone, or it might require `NativeQuerySnippet`s or other `Card`s as inputs; and
+  - a `NativeQuerySnippet` similarly might derive from others;
+
+  A transitive closure over [[serdes-descendants]] should thus give a complete \"subtree\", such as a complete
+  `Collection` and all its contents.
+
+  A typical implementation will run a query or two to collect eg. all `DashboardCard`s that are part of this
+  `Dashboard`, and return them as pairs like `[\"DashboardCard\" 17]`.
+
+  What about [[serdes-dependencies]]?
+  Despite the similar-sounding names, this differs crucially from [[serdes-dependencies]]. [[serdes-descendants]] finds
+  all entities that are \"part\" of the given entity.
+
+  [[serdes-dependencies]] finds all entities that need to be loaded into appdb before this one can be, generally because
+  this has a foreign key to them. The arrow \"points the other way\": [[serdes-dependencies]] points *up* -- from a
+  `Dashboard` to its containing `Collection`, `Collection` to its parent, from a `DashboardCard` to its `Dashboard` and
+  `Card`. [[serdes-descendants]] points *down* to contents, children, and components."
+  {:arglists '([model-name db-id])}
+  (fn [model-name _] model-name))
+
+(defmethod serdes-descendants :default [_ _]
+  nil)
 
 (defn entity-id?
   "Checks if the given string is a 21-character NanoID. Useful for telling entity IDs apart from identity hashes."

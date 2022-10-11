@@ -4,21 +4,19 @@ import PropTypes from "prop-types";
 import cx from "classnames";
 import { t } from "ttag";
 
-import NumberPicker from "./NumberPicker";
-import SelectPicker from "./SelectPicker";
-import TextPicker from "./TextPicker";
-
 import FieldValuesWidget from "metabase/components/FieldValuesWidget";
+
+import { getCurrencySymbol } from "metabase/lib/formatting";
 
 import {
   getFilterArgumentFormatOptions,
   isFuzzyOperator,
-  isCurrency,
-} from "metabase/lib/schema_metadata";
-
-import { getCurrencySymbol } from "metabase/lib/formatting";
-
-import { keyForColumn } from "metabase/lib/dataset";
+} from "metabase-lib/lib/operators/utils";
+import { isCurrency } from "metabase-lib/lib/types/utils/isa";
+import { keyForColumn } from "metabase-lib/lib/queries/utils/dataset";
+import TextPicker from "./TextPicker";
+import SelectPicker from "./SelectPicker";
+import NumberPicker from "./NumberPicker";
 
 import {
   BetweenLayoutContainer,
@@ -28,12 +26,11 @@ import {
 } from "./DefaultPicker.styled";
 
 const defaultPickerPropTypes = {
-  filter: PropTypes.object,
+  filter: PropTypes.array,
   setValue: PropTypes.func,
   setValues: PropTypes.func,
   onCommit: PropTypes.func,
   className: PropTypes.string,
-  isSidebar: PropTypes.bool,
   minWidth: PropTypes.number,
   maxWidth: PropTypes.number,
   checkedColor: PropTypes.string,
@@ -52,7 +49,6 @@ export default function DefaultPicker({
   className,
   minWidth,
   maxWidth,
-  isSidebar,
   checkedColor,
 }) {
   const operator = filter.operator();
@@ -178,7 +174,7 @@ export default function DefaultPicker({
 
   return (
     <DefaultPickerContainer
-      limitHeight={!isSidebar}
+      limitHeight
       className={cx(className, "PopoverBody--marginBottom")}
     >
       {layout}
