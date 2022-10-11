@@ -1,9 +1,8 @@
 /// code to "apply" chart tooltips. (How does one apply a tooltip?)
 
 import d3 from "d3";
-import moment from "moment";
+import moment from "moment-timezone";
 import { getIn } from "icepick";
-import _ from "underscore";
 
 import { formatValue } from "metabase/lib/formatting";
 
