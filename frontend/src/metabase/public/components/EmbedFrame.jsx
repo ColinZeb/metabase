@@ -94,7 +94,7 @@ class EmbedFrame extends Component {
             {children}
           </div>
         </div>
-        {showFooter && (
+        {/* {showFooter && (
           <div className="EmbedFrame-footer p1 md-p2 lg-p3 border-top flex-no-shrink flex align-center">
             {!MetabaseSettings.hideEmbedBranding() && (
               <LogoBadge dark={theme} />
@@ -105,7 +105,7 @@ class EmbedFrame extends Component {
               </div>
             )}
           </div>
-        )}
+        )} */}
       </div>
     );
   }
