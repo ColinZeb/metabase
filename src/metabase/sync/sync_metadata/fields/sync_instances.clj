@@ -56,7 +56,7 @@
                                      base-type)))
          {:table_id          (u/the-id table)
           :name              field-name
-          :display_name      (humanization/name->human-readable-name field-name)
+          :display_name (if-not (nil? field-comment) field-comment (humanization/name->human-readable-name field-name))
           :database_type     (or database-type "NULL") ; placeholder for Fields w/ no type info (e.g. Mongo) & all NULL
           :base_type         base-type
           ;; todo test this?
