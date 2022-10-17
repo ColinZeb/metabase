@@ -17,8 +17,6 @@ import { getComputedSettingsForSeries } from "metabase/visualizations/lib/settin
 import { getCardUiParameters } from "metabase/parameters/utils/cards";
 import { normalizeParameterValue } from "metabase/parameters/utils/parameter-values";
 
-import { isAdHocModelQuestion } from "metabase/lib/data-modeling/utils";
-
 import Databases from "metabase/entities/databases";
 import Timelines from "metabase/entities/timelines";
 
@@ -26,6 +24,7 @@ import { getMetadata } from "metabase/selectors/metadata";
 import { getAlerts } from "metabase/alert/selectors";
 import { getEmbedOptions, getIsEmbedded } from "metabase/selectors/embed";
 import { parseTimestamp } from "metabase/lib/time";
+import { getMode as getQuestionMode } from "metabase/modes/lib/modes";
 import { getSortedTimelines } from "metabase/lib/timelines";
 import { getSetting } from "metabase/selectors/settings";
 import {
@@ -39,6 +38,7 @@ import { isPK } from "metabase-lib/lib/types/utils/isa";
 import Mode from "metabase-lib/lib/Mode";
 import NativeQuery from "metabase-lib/lib/queries/NativeQuery";
 import Question from "metabase-lib/lib/Question";
+import { isAdHocModelQuestion } from "metabase-lib/lib/metadata/utils/models";
 
 export const getUiControls = state => state.qb.uiControls;
 const getQueryStatus = state => state.qb.queryStatus;
@@ -560,7 +560,9 @@ const isZoomingRow = createSelector(
 export const getMode = createSelector(
   [getLastRunQuestion, isZoomingRow],
   (question, isZoomingRow) =>
-    isZoomingRow ? new Mode(question, ObjectMode) : question && question.mode(),
+    isZoomingRow
+      ? new Mode(question, ObjectMode)
+      : question && getQuestionMode(question),
 );
 
 export const getIsObjectDetail = createSelector(
