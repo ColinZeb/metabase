@@ -203,13 +203,6 @@
 
 ;;; ---------------------------------------------- Hydration / Util Fns ----------------------------------------------
 
-(defn target
-  "Return the FK target `Field` that this `Field` points to."
-  [{:keys [semantic_type fk_target_field_id]}]
-  (when (and (isa? semantic_type :type/FK)
-             fk_target_field_id)
-    (db/select-one Field :id fk_target_field_id)))
-
 (defn values
   "Return the `FieldValues` associated with this `field`."
   [{:keys [id]}]
@@ -410,14 +403,16 @@
 (defmethod serdes.base/serdes-dependencies "Field" [field]
   ;; Fields depend on their parent Table, plus any foreign Fields referenced by their Dimensions.
   ;; Take the path, but drop the Field section to get the parent Table's path instead.
-  (let [table (pop (serdes.base/serdes-path field))
+  (let [this  (serdes.base/serdes-path field)
+        table (pop this)
         fks   (some->> field :fk_target_field_id serdes.util/field->path)
         human (->> (:dimensions field)
                    (keep :human_readable_field_id)
                    (map serdes.util/field->path)
                    set)]
     (cond-> (set/union #{table} human)
-      fks   (set/union #{fks}))))
+      fks   (set/union #{fks})
+      true  (disj this))))
 
 (defn- extract-dimensions [dimensions]
   (->> (for [dim dimensions]
