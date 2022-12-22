@@ -31,10 +31,7 @@ import {
   maybeUsePivotEndpoint,
   MetabaseApi,
 } from "metabase/services";
-import {
-  Parameter as ParameterObject,
-  ParameterValues,
-} from "metabase-types/types/Parameter";
+import { ParameterValues } from "metabase-types/types/Parameter";
 import { Card as CardObject, DatasetQuery } from "metabase-types/types/Card";
 import { VisualizationSettings } from "metabase-types/api/card";
 import { Column, Dataset, Value } from "metabase-types/types/Dataset";
@@ -46,7 +43,7 @@ import {
 } from "metabase-types/types/Visualization";
 import { DependentMetadataItem } from "metabase-types/types/Query";
 import { utf8_to_b64url } from "metabase/lib/encoding";
-import { CollectionId } from "metabase-types/api";
+import { CollectionId, Parameter as ParameterObject } from "metabase-types/api";
 
 import {
   getParameterValuesBySlug,
@@ -271,10 +268,6 @@ class QuestionInner {
     return this._card && this._card.persisted;
   }
 
-  isAction() {
-    return false;
-  }
-
   setPersisted(isPersisted) {
     return this.setCard(assoc(this.card(), "persisted", isPersisted));
   }
@@ -287,10 +280,6 @@ class QuestionInner {
     return this.setCard(
       assoc(this.card(), "collection_position", pinned ? 1 : null),
     );
-  }
-
-  setIsAction(isAction) {
-    return this.card();
   }
 
   // locking the display prevents auto-selection
