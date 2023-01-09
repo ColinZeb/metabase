@@ -64,16 +64,15 @@
   (u/prog1 task
     (snowplow/track-event! ::snowplow/new-task-history *current-user-id* (task->snowplow-event <>))))
 
-(u/strict-extend #_{:clj-kondo/ignore [:metabase/disallow-class-or-type-on-model]} (class TaskHistory)
-  models/IModel
-  (merge models/IModelDefaults
-         {:types      (constantly {:task_details :json})
-          :post-insert post-insert}))
+(mi/define-methods
+ TaskHistory
+ {:types      (constantly {:task_details :json})
+  :post-insert post-insert})
 
 (s/defn all
   "Return all TaskHistory entries, applying `limit` and `offset` if not nil"
-  [limit  :- (s/maybe su/IntGreaterThanZero)
-   offset :- (s/maybe su/IntGreaterThanOrEqualToZero)]
+  [limit  :- (s/maybe su/IntGreaterThanZeroPlumatic)
+   offset :- (s/maybe su/IntGreaterThanOrEqualToZeroPlumatic)]
   (db/select TaskHistory (merge {:order-by [[:ended_at :desc]]}
                                 (when limit
                                   {:limit limit})
@@ -87,9 +86,9 @@
 
 (def ^:private TaskHistoryInfo
   "Schema for `info` passed to the `with-task-history` macro."
-  {:task                          su/NonBlankString  ; task name, i.e. `send-pulses`. Conventionally lisp-cased
+  {:task                          su/NonBlankStringPlumatic  ; task name, i.e. `send-pulses`. Conventionally lisp-cased
    (s/optional-key :db_id)        (s/maybe s/Int)    ; DB involved, for sync operations or other tasks where this is applicable.
-   (s/optional-key :task_details) (s/maybe su/Map)}) ; additional map of details to include in the recorded row
+   (s/optional-key :task_details) (s/maybe su/MapPlumatic)}) ; additional map of details to include in the recorded row
 
 (defn- save-task-history! [start-time-ms info]
   (let [end-time-ms (System/currentTimeMillis)

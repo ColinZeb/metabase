@@ -12,7 +12,6 @@
    [metabase.models.serialization.util :as serdes.util]
    [metabase.util :as u]
    [metabase.util.date-2 :as u.date]
-   [metabase.util.i18n :refer [tru]]
    [metabase.util.schema :as su]
    [schema.core :as s]
    [toucan.db :as db]
@@ -43,14 +42,13 @@
                   :visualization_settings {}}]
     (merge defaults dashcard)))
 
-(u/strict-extend #_{:clj-kondo/ignore [:metabase/disallow-class-or-type-on-model]} (class DashboardCard)
-  models/IModel
-  (merge models/IModelDefaults
-         {:properties (constantly {:timestamped? true
-                                   :entity_id    true})
-          :types      (constantly {:parameter_mappings     :parameters-list
-                                   :visualization_settings :visualization-settings})
-          :pre-insert pre-insert}))
+(mi/define-methods
+ DashboardCard
+ {:properties (constantly {::mi/timestamped? true
+                           ::mi/entity-id    true})
+  :types      (constantly {:parameter_mappings     :parameters-list
+                           :visualization_settings :visualization-settings})
+  :pre-insert pre-insert})
 
 (defmethod serdes.hash/identity-hash-fields DashboardCard
   [_dashboard-card]
@@ -71,7 +69,8 @@
   {:pre [(integer? dashboard_id)]}
   (db/select-one 'Dashboard, :id dashboard_id))
 
-(defn ^:hydrate series
+(mi/define-simple-hydration-method series
+  :series
   "Return the `Cards` associated as additional series on this DashboardCard."
   [{:keys [id]}]
   (db/select [Card :id :name :description :display :dataset_query :visualization_settings :collection_id]
@@ -84,7 +83,7 @@
 
 (s/defn retrieve-dashboard-card
   "Fetch a single DashboardCard by its ID value."
-  [id :- su/IntGreaterThanZero]
+  [id :- su/IntGreaterThanZeroPlumatic]
   (-> (db/select-one DashboardCard :id id)
       (hydrate :series)))
 
@@ -119,8 +118,8 @@
    *  If an existing DashboardCardSeries has no corresponding ID in `card-ids`, it will be deleted.
    *  All cards will be updated with a `position` according to their place in the collection of `card-ids`"
   {:arglists '([dashboard-card card-ids])}
-  [{:keys [id]} :- {:id su/IntGreaterThanZero, s/Keyword s/Any}
-   card-ids     :- [su/IntGreaterThanZero]]
+  [{:keys [id]} :- {:id su/IntGreaterThanZeroPlumatic, s/Keyword s/Any}
+   card-ids     :- [su/IntGreaterThanZeroPlumatic]]
   ;; first off, just delete all series on the dashboard card (we add them again below)
   (db/delete! DashboardCardSeries :dashboardcard_id id)
   ;; now just insert all of the series that were given to us
@@ -131,12 +130,12 @@
       (db/insert-many! DashboardCardSeries cards))))
 
 (def ^:private DashboardCardUpdates
-  {:id                                      su/IntGreaterThanZero
-   (s/optional-key :action_id)              (s/maybe su/IntGreaterThanZero)
-   (s/optional-key :parameter_mappings)     (s/maybe [su/Map])
-   (s/optional-key :visualization_settings) (s/maybe su/Map)
+  {:id                                      su/IntGreaterThanZeroPlumatic
+   (s/optional-key :action_id)              (s/maybe su/IntGreaterThanZeroPlumatic)
+   (s/optional-key :parameter_mappings)     (s/maybe [su/MapPlumatic])
+   (s/optional-key :visualization_settings) (s/maybe su/MapPlumatic)
    ;; series is a sequence of IDs of additional cards after the first to include as "additional serieses"
-   (s/optional-key :series)                 (s/maybe [su/IntGreaterThanZero])
+   (s/optional-key :series)                 (s/maybe [su/IntGreaterThanZeroPlumatic])
    s/Keyword                                s/Any})
 
 (s/defn update-dashboard-card!
@@ -156,10 +155,10 @@
                                    :col                    col
                                    :parameter_mappings     parameter_mappings
                                    :visualization_settings visualization_settings}
-                                  ;; Allow changing card for model_actions
+                                  ;; Allow changing card for actions
                                   ;; This is to preserve the existing behavior of questions and card_id
                                   ;; I don't know why card_id couldn't be changed for questions though.
-                                  (:action_slug visualization_settings) (assoc :card_id card_id))))
+                                  action_id (assoc :card_id card_id))))
      ;; update series (only if they changed)
      (when-not (= series (map :card_id (db/select [DashboardCardSeries :card_id]
                                                   :dashboardcard_id id
@@ -169,18 +168,18 @@
 
 (def ParamMapping
   "Schema for a parameter mapping as it would appear in the DashboardCard `:parameter_mappings` column."
-  {:parameter_id su/NonBlankString
+  {:parameter_id su/NonBlankStringPlumatic
    ;; TODO -- validate `:target` as well... breaks a few tests tho so those will have to be fixed
    #_:target       #_s/Any
    s/Keyword     s/Any})
 
 (def ^:private NewDashboardCard
-  {:dashboard_id                            su/IntGreaterThanZero
-   (s/optional-key :card_id)                (s/maybe su/IntGreaterThanZero)
-   (s/optional-key :action_id)              (s/maybe su/IntGreaterThanZero)
+  {:dashboard_id                            su/IntGreaterThanZeroPlumatic
+   (s/optional-key :card_id)                (s/maybe su/IntGreaterThanZeroPlumatic)
+   (s/optional-key :action_id)              (s/maybe su/IntGreaterThanZeroPlumatic)
    ;; TODO - use ParamMapping. Breaks too many tests right now tho
-   (s/optional-key :parameter_mappings)     (s/maybe [#_ParamMapping su/Map])
-   (s/optional-key :visualization_settings) (s/maybe su/Map)
+   (s/optional-key :parameter_mappings)     (s/maybe [#_ParamMapping su/MapPlumatic])
+   (s/optional-key :visualization_settings) (s/maybe su/MapPlumatic)
    ;; TODO - make the rest of the options explicit instead of just allowing whatever for other keys
    s/Keyword                                s/Any})
 
@@ -190,11 +189,6 @@
   [dashboard-card :- NewDashboardCard]
   (let [{:keys [dashboard_id card_id action_id parameter_mappings visualization_settings size_x size_y row col series]
          :or   {size_x 2, size_y 2, series []}} dashboard-card]
-    ;; make sure the Card isn't a writeback QueryAction. It doesn't make sense to add these to a Dashboard since we're
-    ;; not supposed to be executing them for results
-    (when (db/select-one-field :is_write Card :id card_id)
-      (throw (ex-info (tru "You cannot add an is_write Card to a Dashboard.")
-                      {:status-code 400})))
     (db/transaction
      (let [dashboard-card (db/insert! DashboardCard
                                       :dashboard_id           dashboard_id

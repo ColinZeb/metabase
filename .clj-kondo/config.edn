@@ -53,9 +53,9 @@
   {:exclude
    {metabase.cmd/dump                                                            {:namespaces ["metabase\\.cmd-test" "metabase-enterprise\\.serialization\\.cmd-test"]}
     metabase.cmd/load                                                            {:namespaces ["metabase\\.cmd-test" "metabase-enterprise\\.serialization\\.cmd-test"]}
-    metabase.db.data-migrations/data-migrations                                  {:namespaces ["metabase.db.data-migrations"]}
-    metabase.db.data-migrations/defmigration                                     {:namespaces ["metabase.db.data-migrations"]}
-    metabase.db.data-migrations/run-migration-if-needed!                         {:namespaces ["metabase.db.data-migrations"]}
+    metabase.db.data-migrations/data-migrations                                  {:namespaces ["metabase\\.db\\.data-migrations"]}
+    metabase.db.data-migrations/defmigration                                     {:namespaces ["metabase\\.db\\.data-migrations"]}
+    metabase.db.data-migrations/run-migration-if-needed!                         {:namespaces ["metabase\\.db\\.data-migrations"]}
     metabase.driver.common/ThreadSafeSimpleDateFormat                            {:namespaces ["metabase\\.driver.*"]}
     metabase.driver.common/create-db-time-formatters                             {:namespaces ["metabase\\.driver.*"]}
     metabase.driver.common/current-db-time                                       {:namespaces ["metabase.*"]}
@@ -120,8 +120,12 @@
     honeysql.types                                                  htypes
     java-time                                                       t
     malli.core                                                      mc
+    malli.error                                                     me
     malli.experimental                                              mx
+    malli.generator                                                 mg
+    malli.provider                                                  mp
     malli.transform                                                 mtx
+    malli.util                                                      mut
     medley.core                                                     m
     metabase-enterprise.audit-app.pages.common                      common
     metabase-enterprise.sandbox.api.table                           table
@@ -364,7 +368,7 @@
   honeysql.helpers/defhelper                                                           clj-kondo.lint-as/def-catch-all
   honeysql.util/defalias                                                               clojure.core/def
   metabase-enterprise.serialization.test-util/with-random-dump-dir                     clojure.core/let
-  metabase.actions.test-util/with-action                                               clojure.core/let
+  metabase.actions.test-util/with-actions                                              clojure.core/let
   metabase.actions.test-util/with-card-emitter                                         clojure.core/let
   metabase.actions.test-util/with-dashboard-emitter                                    clojure.core/let
   metabase.api.common/let-404                                                          clojure.core/let
@@ -430,6 +434,7 @@
    metabase.api.common/defendpoint-schema                                                                                    hooks.metabase.api.common/defendpoint
    metabase.api.common/defendpoint                                                                                           hooks.metabase.api.common/defendpoint
    metabase.api.common/defendpoint-async                                                                                     hooks.metabase.api.common/defendpoint
+   metabase.api.common/defendpoint-async-schema                                                                              hooks.metabase.api.common/defendpoint
    metabase.api.dashboard-test/with-chain-filter-fixtures                                                                    hooks.common/let-one-with-optional-value
    metabase.api.embed-test/do-response-formats                                                                               hooks.common/with-two-bindings
    metabase.api.embed-test/with-chain-filter-fixtures                                                                        hooks.common/let-one-with-optional-value
@@ -471,6 +476,8 @@
    metabase.models.emitter/Emitter                                                                                           hooks.metabase.models.disallow-invoking-model/hook
    metabase.models.field-values/FieldValues                                                                                  hooks.metabase.models.disallow-invoking-model/hook
    metabase.models.field/Field                                                                                               hooks.metabase.models.disallow-invoking-model/hook
+   metabase.models.interface/define-simple-hydration-method                                                                  hooks.metabase.models.interface/define-hydration-method
+   metabase.models.interface/define-batched-hydration-method                                                                 hooks.metabase.models.interface/define-hydration-method
    metabase.models.login-history/LoginHistory                                                                                hooks.metabase.models.disallow-invoking-model/hook
    metabase.models.metric-important-field/MetricImportantField                                                               hooks.metabase.models.disallow-invoking-model/hook
    metabase.models.metric/Metric                                                                                             hooks.metabase.models.disallow-invoking-model/hook

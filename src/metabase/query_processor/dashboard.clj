@@ -111,14 +111,14 @@
                    target)))
    dashboard-param-id->param))
 
-(s/defn ^:private resolve-params-for-query :- (s/maybe [su/Map])
+(s/defn ^:private resolve-params-for-query :- (s/maybe [su/MapPlumatic])
   "Given a sequence of parameters included in a query-processing request to run the query for a Dashboard/Card, validate
   that those parameters exist and have allowed types, and merge in default values and other info from the parameter
   mappings."
-  [dashboard-id   :- su/IntGreaterThanZero
-   card-id        :- su/IntGreaterThanZero
-   dashcard-id    :- su/IntGreaterThanZero
-   request-params :- (s/maybe [su/Map])]
+  [dashboard-id   :- su/IntGreaterThanZeroPlumatic
+   card-id        :- su/IntGreaterThanZeroPlumatic
+   dashcard-id    :- su/IntGreaterThanZeroPlumatic
+   request-params :- (s/maybe [su/MapPlumatic])]
   (log/tracef "Resolving Dashboard %d Card %d query request parameters" dashboard-id card-id)
   (let [request-params            (mbql.normalize/normalize-fragment [:parameters] request-params)
         ;; ignore default values in request params as well. (#20516)
@@ -165,7 +165,6 @@
   ;; make sure we can read this Dashboard. Card will get read-checked later on inside
   ;; [[qp.card/run-query-for-card-async]]
   (api/read-check Dashboard dashboard-id)
-  (api/check-is-readonly {:is_write (db/select-one-field :is_write 'Card :id card-id)})
   (check-card-and-dashcard-are-in-dashboard dashboard-id card-id dashcard-id)
   (let [resolved-params (resolve-params-for-query dashboard-id card-id dashcard-id parameters)
         options         (merge

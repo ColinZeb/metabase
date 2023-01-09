@@ -17,6 +17,7 @@ Tooltip.propTypes = {
   placement: PropTypes.string,
   isEnabled: PropTypes.bool,
   isOpen: PropTypes.bool,
+  isPadded: PropTypes.bool,
   offset: PropTypes.oneOfType([PropTypes.array, PropTypes.func]),
   maxWidth: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
 };
@@ -34,6 +35,7 @@ export interface TooltipProps
   isEnabled?: boolean;
   isOpen?: boolean;
   maxWidth?: string | number | undefined;
+  isPadded?: boolean;
 }
 
 // Tippy relies on child nodes forwarding refs, so when `children` is neither
@@ -66,6 +68,7 @@ function Tooltip({
   offset,
   isEnabled,
   isOpen,
+  isPadded = true,
   preventOverflow = false,
   maxWidth = 200,
 }: TooltipProps) {
@@ -91,10 +94,14 @@ function Tooltip({
     [preventOverflow],
   );
 
+  // themes styles come from frontend/src/metabase/components/Popover/Popover.css
+  // Tippy theming API: https://atomiks.github.io/tippyjs/v6/themes/
+  const theme = `tooltip ${isPadded ? "" : "no-padding"}`;
+
   if (tooltip && targetProps) {
     return (
       <TippyComponent
-        theme="tooltip"
+        theme={theme}
         className="popover"
         appendTo={() => document.body}
         content={tooltip}

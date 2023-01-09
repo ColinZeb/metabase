@@ -25,8 +25,8 @@
 
 (def Definition
   "Definition spec for a cached table."
-  {:table-name su/NonBlankString
-   :field-definitions [{:field-name su/NonBlankString
+  {:table-name su/NonBlankStringPlumatic
+   :field-definitions [{:field-name su/NonBlankStringPlumatic
                         ;; TODO check (isa? :type/Integer :type/*)
                         :base-type  s/Keyword}]})
 
@@ -65,14 +65,13 @@
 
 (models/defmodel PersistedInfo :persisted_info)
 
-(u/strict-extend #_{:clj-kondo/ignore [:metabase/disallow-class-or-type-on-model]} (class PersistedInfo)
-  models/IModel
-  (merge models/IModelDefaults
-         {:types (constantly {:definition ::definition})}))
+(mi/define-methods
+ PersistedInfo
+ {:types (constantly {:definition ::definition})})
 
-(defn persisted?
+(mi/define-batched-hydration-method persisted?
+  :persisted
   "Hydrate a card :is_persisted for the frontend."
-  {:batched-hydrate :persisted}
   [cards]
   (when (seq cards)
     (let [existing-ids (db/select-field :card_id PersistedInfo

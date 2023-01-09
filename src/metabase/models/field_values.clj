@@ -22,6 +22,7 @@
    [clojure.string :as str]
    [clojure.tools.logging :as log]
    [java-time :as t]
+   [metabase.models.interface :as mi]
    [metabase.models.serialization.base :as serdes.base]
    [metabase.models.serialization.hash :as serdes.hash]
    [metabase.models.serialization.util :as serdes.util]
@@ -81,7 +82,7 @@
 (models/defmodel FieldValues :metabase_fieldvalues)
 
 (defn- assert-valid-human-readable-values [{human-readable-values :human_readable_values}]
-  (when (s/check (s/maybe [(s/maybe su/NonBlankString)]) human-readable-values)
+  (when (s/check (s/maybe [(s/maybe su/NonBlankStringPlumatic)]) human-readable-values)
     (throw (ex-info (tru "Invalid human-readable-values: values must be a sequence; each item must be nil or a string")
                     {:human-readable-values human-readable-values
                      :status-code           400}))))
@@ -164,16 +165,15 @@
                                        :else
                                        [])))))
 
-(u/strict-extend #_{:clj-kondo/ignore [:metabase/disallow-class-or-type-on-model]} (class FieldValues)
-  models/IModel
-  (merge models/IModelDefaults
-         {:properties  (constantly {:timestamped? true})
-          :types       (constantly {:human_readable_values :json-no-keywordization
-                                    :values                :json
-                                    :type                  :keyword})
-          :pre-insert  pre-insert
-          :pre-update  pre-update
-          :post-select post-select}))
+(mi/define-methods
+ FieldValues
+ {:properties  (constantly {::mi/timestamped? true})
+  :types       (constantly {:human_readable_values :json-no-keywordization
+                            :values                :json
+                            :type                  :keyword})
+  :pre-insert  pre-insert
+  :pre-update  pre-update
+  :post-select post-select})
 
 (defmethod serdes.hash/identity-hash-fields FieldValues
   [_field-values]
@@ -201,9 +201,9 @@
            visibility-type  :visibility_type
            has-field-values :has_field_values
            :as              field} field-or-field-id]
-      (s/check {:visibility_type  su/KeywordOrString
-                :base_type        (s/maybe su/KeywordOrString)
-                :has_field_values (s/maybe su/KeywordOrString)
+      (s/check {:visibility_type  su/KeywordOrStringPlumatic
+                :base_type        (s/maybe su/KeywordOrStringPlumatic)
+                :has_field_values (s/maybe su/KeywordOrStringPlumatic)
                 s/Keyword         s/Any}
                field)
       (boolean
