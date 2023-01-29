@@ -139,14 +139,14 @@ function EmbedFrame({
         )}
         <Body>{children}</Body>
       </ContentContainer>
-      {showFooter && (
+      {/* {showFooter && (
         <Footer className="EmbedFrame-footer">
           {hasEmbedBranding && <LogoBadge dark={theme === "night"} />}
           {actionButtons && (
             <ActionButtonsContainer>{actionButtons}</ActionButtonsContainer>
           )}
         </Footer>
-      )}
+      )} */}
     </Root>
   );
 }
