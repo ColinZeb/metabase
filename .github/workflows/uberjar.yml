@@ -2,8 +2,9 @@ name: Build + Docker Uberjar
 
 on:
   push:
-    branches:
-      - "master"
+    # branches:
+    #   - "master"
+    #   - "lab4"
     paths-ignore:
       # config files
       - ".**"
@@ -129,15 +130,15 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     - name: Retag and push images if master (ee)
       if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee metabase/metabase-enterprise-head:latest && docker push metabase/metabase-enterprise-head:latest
+      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee colinzeb/metabase-enterprise-head:latest && docker push colinzeb/metabase-enterprise-head:latest
 
     - name: Retag and push images if master (oss)
       if: ${{ (github.ref_name == 'master') && matrix.edition == 'oss' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss metabase/metabase-head:latest && docker push metabase/metabase-head:latest
+      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss colinzeb/metabase-head:latest && docker push colinzeb/metabase-head:latest
 
     - name: Retag and push images if dev branch
       if: ${{ !(startsWith(github.ref_name,'master') || startsWith(github.ref_name,'backport')) && matrix.edition == 'ee' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee metabase/metabase-dev:${{ steps.extract_branch.outputs.branch }} && docker push metabase/metabase-dev:${{ steps.extract_branch.outputs.branch }}
+      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee colinzeb/metabase-dev:${{ steps.extract_branch.outputs.branch }} && docker push colinzeb/metabase-dev:${{ steps.extract_branch.outputs.branch }}
 
     - name: Run Trivy vulnerability scanner if master (ee)
       if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee' }}
@@ -145,7 +146,7 @@ jobs:
       env:
         TRIVY_OFFLINE_SCAN: true
       with:
-        image-ref: docker.io/metabase/metabase-enterprise-head:latest
+        image-ref: docker.io/colinzeb/metabase-enterprise-head:latest
         format: sarif
         output: trivy-results.sarif
 
@@ -155,7 +156,7 @@ jobs:
       env:
         TRIVY_OFFLINE_SCAN: true
       with:
-        image-ref: docker.io/metabase/metabase-head:latest
+        image-ref: docker.io/colinzeb/metabase-head:latest
         format: sarif
         output: trivy-results.sarif
 
@@ -165,7 +166,7 @@ jobs:
       env:
         TRIVY_OFFLINE_SCAN: true
       with:
-        image-ref: docker.io/metabase/metabase-dev:${{ steps.extract_branch.outputs.branch }}
+        image-ref: docker.io/colinzeb/metabase-dev:${{ steps.extract_branch.outputs.branch }}
         format: sarif
         output: trivy-results.sarif
 
