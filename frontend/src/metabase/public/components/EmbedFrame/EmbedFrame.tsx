@@ -155,7 +155,7 @@ function EmbedFrame({
         )}
         <Body>{children}</Body>
       </ContentContainer>
-      {showFooter && (
+      {/* {showFooter && (
         <Footer className="EmbedFrame-footer" variant={footerVariant}>
           {hasEmbedBranding && (
             <LogoBadge variant={footerVariant} dark={theme === "night"} />
@@ -164,7 +164,7 @@ function EmbedFrame({
             <ActionButtonsContainer>{actionButtons}</ActionButtonsContainer>
           )}
         </Footer>
-      )}
+      )} */}
     </Root>
   );
 }
