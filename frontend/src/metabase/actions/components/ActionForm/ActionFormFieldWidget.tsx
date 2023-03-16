@@ -8,7 +8,6 @@ import FormRadioWidget, {
 import FormSelectWidget from "metabase/core/components/FormSelect";
 import FormNumericInputWidget from "metabase/core/components/FormNumericInput";
 import FormBooleanWidget from "metabase/core/components/FormToggle";
-import CategoryFieldPicker from "metabase/components/FormCategoryInput";
 
 import type { InputComponentType } from "metabase-types/api";
 import type { ActionFormFieldProps } from "metabase/actions/types";
@@ -27,7 +26,6 @@ const WIDGETS: Record<InputComponentType, React.FunctionComponent<any>> = {
   boolean: FormBooleanWidget,
   radio: VerticalRadio,
   select: FormSelectWidget,
-  category: CategoryFieldPicker,
 };
 
 interface FormWidgetProps {
@@ -41,5 +39,5 @@ export const FormFieldWidget = forwardRef(function FormFieldWidget(
   const Widget =
     (formField.type ? WIDGETS[formField.type] : FormInputWidget) ??
     FormInputWidget;
-  return <Widget {...formField} nullable={formField.optional} ref={ref} />;
+  return <Widget {...formField} nullable ref={ref} />;
 });

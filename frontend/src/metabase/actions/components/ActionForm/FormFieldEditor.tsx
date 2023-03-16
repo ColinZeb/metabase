@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { t } from "ttag";
 
 import Radio from "metabase/core/components/Radio";
+import { isNotNull } from "metabase/core/utils/types";
 
 import type { ActionFormFieldProps } from "metabase/actions/types";
 import type {
@@ -37,13 +38,26 @@ export interface FormFieldEditorProps {
   onChange: (settings: FieldSettings) => void;
 }
 
-function cleanOptionValues(values: FieldValueOptions, fieldType: FieldType) {
-  if (fieldType === "number") {
-    return values
-      .map(value => Number(value))
-      .filter(value => !Number.isNaN(value));
+function cleanFieldValue(
+  value: string | number | undefined,
+  fieldType: FieldType,
+) {
+  if (value == null) {
+    return value;
+  } else if (fieldType === "string") {
+    return String(value);
+  } else if (fieldType === "number") {
+    const number = Number(value);
+    return !Number.isNaN(number) ? number : undefined;
+  } else {
+    return undefined;
   }
-  return values.map(value => String(value));
+}
+
+function cleanOptionValues(values: FieldValueOptions, fieldType: FieldType) {
+  return values
+    .map(value => cleanFieldValue(value, fieldType))
+    .filter(isNotNull);
 }
 
 function FormFieldEditor({
@@ -62,7 +76,7 @@ function FormFieldEditor({
       option => option.value,
     );
 
-    // Allows to preserve dropdown/radio input types across number/string/category field types
+    // Allows to preserve dropdown/radio input types across number/string field types
     const nextInputType = inputTypesForNextFieldType.includes(inputType)
       ? inputType
       : inputTypesForNextFieldType[0];
@@ -71,11 +85,17 @@ function FormFieldEditor({
       ? cleanOptionValues(valueOptions || [], nextFieldType)
       : undefined;
 
+    const nextDefaultValue = cleanFieldValue(
+      fieldSettings.defaultValue,
+      nextFieldType,
+    );
+
     onChange({
       ...fieldSettings,
       fieldType: nextFieldType,
       inputType: nextInputType,
       valueOptions: nextValueOptions,
+      defaultValue: nextDefaultValue,
     });
   };
 

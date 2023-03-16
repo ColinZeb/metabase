@@ -1,9 +1,11 @@
 import { t } from "ttag";
 import _ from "underscore";
-
 import { moveElement } from "metabase/core/utils/arrays";
-
-import type { WritebackAction, FieldSettingsMap } from "metabase-types/api";
+import {
+  FieldSettingsMap,
+  InputSettingType,
+  WritebackAction,
+} from "metabase-types/api";
 
 export const getSubmitButtonColor = (action: WritebackAction): string => {
   if (action.type === "implicit" && action.kind === "row/delete") {
@@ -56,4 +58,20 @@ export const reorderFields = (
   );
 
   return _.indexBy(fieldsWithUpdatedOrderProperty, "id");
+};
+
+const inputTypeMap: Record<InputSettingType, string> = {
+  string: "text",
+  text: "textarea",
+  date: "date",
+  datetime: "datetime-local",
+  time: "time",
+  number: "number",
+  boolean: "boolean",
+  select: "text",
+  radio: "text",
+};
+
+export const getDefaultValueInputType = (inputType: InputSettingType) => {
+  return inputTypeMap[inputType];
 };

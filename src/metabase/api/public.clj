@@ -151,7 +151,7 @@
     (apply run-query-for-card-with-id-async card-id export-format parameters options)))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
-(api/defendpoint-schema ^:streaming GET "/card/:uuid/query"
+(api/defendpoint-schema GET "/card/:uuid/query"
   "Fetch a publicly-accessible Card an return query results as well as `:card` information. Does not require auth
    credentials. Public sharing must be enabled."
   [uuid parameters]
@@ -159,7 +159,7 @@
   (run-query-for-card-with-public-uuid-async uuid :api (json/parse-string parameters keyword)))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
-(api/defendpoint-schema ^:streaming GET "/card/:uuid/query/:export-format"
+(api/defendpoint-schema GET "/card/:uuid/query/:export-format"
   "Fetch a publicly-accessible Card and return query results in the specified format. Does not require auth
    credentials. Public sharing must be enabled."
   [uuid export-format :as {{:keys [parameters]} :params}]
@@ -235,7 +235,7 @@
       (m/mapply qp.dashboard/run-query-for-dashcard-async options))))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
-(api/defendpoint-schema ^:streaming GET "/dashboard/:uuid/dashcard/:dashcard-id/card/:card-id"
+(api/defendpoint-schema GET "/dashboard/:uuid/dashcard/:dashcard-id/card/:card-id"
   "Fetch the results for a Card in a publicly-accessible Dashboard. Does not require auth credentials. Public
    sharing must be enabled."
   [uuid card-id dashcard-id parameters]
@@ -374,12 +374,14 @@
        (when-let [table-id (db/select-one-field :table_id Field :id field-id, :semantic_type (mdb.u/isa :type/PK))]
          (db/exists? Field :id search-field-id, :table_id table-id, :semantic_type (mdb.u/isa :type/Name))))))
 
-
 (defn- check-field-is-referenced-by-dashboard
   "Check that `field-id` belongs to a Field that is used as a parameter in a Dashboard with `dashboard-id`, or throw a
   404 Exception."
   [field-id dashboard-id]
-  (let [param-field-ids (params/dashboard->param-field-ids (api/check-404 (db/select-one Dashboard :id dashboard-id)))]
+  (let [dashboard       (-> (db/select-one Dashboard :id dashboard-id)
+                            api/check-404
+                            (hydrate [:ordered_cards :card]))
+        param-field-ids (params/dashcards->param-field-ids (:ordered_cards dashboard))]
     (api/check-404 (contains? param-field-ids field-id))))
 
 (defn card-and-field-id->values
@@ -533,7 +535,7 @@
 
 ;; TODO -- why do these endpoints START with `/pivot/` whereas the version in Dash
 #_{:clj-kondo/ignore [:deprecated-var]}
-(api/defendpoint-schema ^:streaming GET "/pivot/card/:uuid/query"
+(api/defendpoint-schema GET "/pivot/card/:uuid/query"
   "Fetch a publicly-accessible Card an return query results as well as `:card` information. Does not require auth
    credentials. Public sharing must be enabled."
   [uuid parameters]
@@ -541,7 +543,7 @@
   (run-query-for-card-with-public-uuid-async uuid :api (json/parse-string parameters keyword) :qp-runner qp.pivot/run-pivot-query))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
-(api/defendpoint-schema ^:streaming GET "/pivot/dashboard/:uuid/dashcard/:dashcard-id/card/:card-id"
+(api/defendpoint-schema GET "/pivot/dashboard/:uuid/dashcard/:dashcard-id/card/:card-id"
   "Fetch the results for a Card in a publicly-accessible Dashboard. Does not require auth credentials. Public
    sharing must be enabled."
   [uuid card-id dashcard-id parameters]
