@@ -27,7 +27,8 @@
    [metabase.util.schema :as su]
    [schema.core]
    [toucan.db :as db]
-   [toucan.hydrate :refer [hydrate]]))
+   [toucan.hydrate :refer [hydrate]]
+   [toucan2.core :as t2]))
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                          PERMISSIONS GRAPH ENDPOINTS                                           |
@@ -134,9 +135,9 @@
   is manager of."
   []
   (try
-   (validation/check-group-manager)
-   (catch clojure.lang.ExceptionInfo _e
-     (validation/check-has-application-permission :setting)))
+    (validation/check-group-manager)
+    (catch clojure.lang.ExceptionInfo _e
+      (validation/check-has-application-permission :setting)))
   (let [query (when (and (not api/*is-superuser?*)
                          (premium-features/enable-advanced-permissions?)
                          api/*is-group-manager?*)
@@ -153,8 +154,9 @@
   "Fetch the details for a certain permissions group."
   [id]
   (validation/check-group-manager id)
-  (-> (db/select-one PermissionsGroup :id id)
-      (hydrate :members)))
+  (api/check-404
+   (-> (t2/select-one PermissionsGroup :id id)
+       (hydrate :members))))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (api/defendpoint-schema POST "/group"
@@ -163,7 +165,7 @@
   {name su/NonBlankString}
   (api/check-superuser)
   (db/insert! PermissionsGroup
-    :name name))
+              :name name))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (api/defendpoint-schema PUT "/group/:group-id"
@@ -173,9 +175,9 @@
   (validation/check-manager-of-group group-id)
   (api/check-404 (db/exists? PermissionsGroup :id group-id))
   (db/update! PermissionsGroup group-id
-    :name name)
+              :name name)
   ;; return the updated group
-  (db/select-one PermissionsGroup :id group-id))
+  (t2/select-one PermissionsGroup :id group-id))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (api/defendpoint-schema DELETE "/group/:group-id"
@@ -239,15 +241,15 @@
   (validation/check-advanced-permissions-enabled :group-manager)
   ;; Make sure only Super user or Group Managers can call this
   (validation/check-group-manager)
-  (let [old (db/select-one PermissionsGroupMembership :id id)]
+  (let [old (t2/select-one PermissionsGroupMembership :id id)]
     (api/check-404 old)
     (validation/check-manager-of-group (:group_id old))
     (api/check
-       (db/exists? User :id (:user_id old) :is_superuser false)
-       [400 (tru "Admin cant be a group manager.")])
+     (db/exists? User :id (:user_id old) :is_superuser false)
+     [400 (tru "Admin cant be a group manager.")])
     (db/update! PermissionsGroupMembership (:id old)
                 :is_group_manager is_group_manager)
-    (db/select-one PermissionsGroupMembership :id (:id old))))
+    (t2/select-one PermissionsGroupMembership :id (:id old))))
 
 (api/defendpoint PUT "/membership/:group-id/clear"
   "Remove all members from a `PermissionsGroup`. Returns a 400 (Bad Request) if the group ID is for the admin group."
@@ -263,7 +265,7 @@
   "Remove a User from a PermissionsGroup (delete their membership)."
   [id]
   {id ms/PositiveInt}
-  (let [membership (db/select-one PermissionsGroupMembership :id id)]
+  (let [membership (t2/select-one PermissionsGroupMembership :id id)]
     (api/check-404 membership)
     (validation/check-manager-of-group (:group_id membership))
     (db/delete! PermissionsGroupMembership :id id)
