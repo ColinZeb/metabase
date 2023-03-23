@@ -39,7 +39,7 @@
         ;; PK is ok because it gets marked as part of metadata sync
         (is (= (zipmap ["CATEGORY_ID" "ID" "LATITUDE" "LONGITUDE" "NAME" "PRICE"]
                        (repeat {:semantic_type nil, :last_analyzed analysis-date}))
-               (into {} (for [field (db/select [Field :name :semantic_type :last_analyzed] :table_id (data/id :venues))]
+               (into {} (for [field (t2/select [Field :name :semantic_type :last_analyzed] :table_id (data/id :venues))]
                           [(:name field) (into {} (dissoc field :name))]))))))))
 
 ;; ...but they *SHOULD* get analyzed if they ARE newly created (expcept for PK which we skip)
@@ -57,7 +57,7 @@
              {:name "LONGITUDE", :semantic_type :type/Longitude, :last_analyzed true}
              {:name "CATEGORY_ID", :semantic_type :type/Category, :last_analyzed true}
              {:name "NAME", :semantic_type :type/Name, :last_analyzed true}}
-           (set (for [field (db/select [Field :name :semantic_type :last_analyzed] :table_id (u/the-id table))]
+           (set (for [field (t2/select [Field :name :semantic_type :last_analyzed] :table_id (u/the-id table))]
                   (into {} (update field :last_analyzed boolean))))))))
 
 (deftest mark-fields-as-analyzed-test
@@ -82,7 +82,7 @@
                                 :last_analyzed       #t "2017-08-09T00:00Z"}]]
         (#'analyze/update-fields-last-analyzed! table)
         (is (= #{"Current fingerprint, not analyzed"}
-               (db/select-field :name Field :table_id (u/the-id table), :last_analyzed [:> #t "2018-01-01"])))))))
+               (t2/select-fn-set :name Field :table_id (u/the-id table), :last_analyzed [:> #t "2018-01-01"])))))))
 
 (deftest survive-fingerprinting-errors
   (testing "Make sure we survive fingerprinting failing"

@@ -64,7 +64,7 @@
   "Add `:database_id` fields to `metrics` by looking them up from their `:table_id`."
   [metrics]
   (when (seq metrics)
-    (let [table-id->db-id (db/select-id->field :db_id Table, :id [:in (set (map :table_id metrics))])]
+    (let [table-id->db-id (t2/select-pk->fn :db_id Table, :id [:in (set (map :table_id metrics))])]
       (for [metric metrics]
         (assoc metric :database_id (table-id->db-id (:table_id metric)))))))
 
@@ -72,7 +72,7 @@
 (api/defendpoint-schema GET "/"
   "Fetch *all* `Metrics`."
   []
-  (as-> (db/select Metric, :archived false, {:order-by [:%lower.name]}) metrics
+  (as-> (t2/select Metric, :archived false, {:order-by [:%lower.name]}) metrics
     (hydrate metrics :creator)
     (add-db-ids metrics)
     (filter mi/can-read? metrics)
@@ -94,7 +94,7 @@
                      new-body)
         archive?   (:archived changes)]
     (when changes
-      (db/update! Metric id changes))
+      (t2/update! Metric id changes))
     (u/prog1 (hydrated-metric id)
       (events/publish-event! (if archive? :metric-delete :metric-update)
         (assoc <> :actor_id api/*current-user-id*, :revision_message revision_message)))))
@@ -126,7 +126,7 @@
   (api/write-check Metric id)
   (api/check (<= (count important_field_ids) 3)
     [400 "A Metric can have a maximum of 3 important fields."])
-  (let [[fields-to-remove fields-to-add] (data/diff (set (db/select-field :field_id 'MetricImportantField :metric_id id))
+  (let [[fields-to-remove fields-to-add] (data/diff (set (t2/select-fn-set :field_id 'MetricImportantField :metric_id id))
                                                     (set important_field_ids))]
 
     ;; delete old fields as needed

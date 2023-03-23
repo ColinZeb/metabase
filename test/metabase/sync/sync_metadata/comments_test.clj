@@ -14,8 +14,8 @@
    [toucan2.core :as t2]))
 
 (defn- db->fields [db]
-  (let [table-ids (db/select-ids Table :db_id (u/the-id db))]
-    (set (map (partial into {}) (db/select ['Field :name :description] :table_id [:in table-ids])))))
+  (let [table-ids (t2/select-pks-set Table :db_id (u/the-id db))]
+    (set (map (partial into {}) (t2/select ['Field :name :description] :table_id [:in table-ids])))))
 
 (tx/defdataset basic-field-comments
   [["basic_field_comments"
@@ -87,7 +87,7 @@
                                                     :table-comment     comment}]}))
 
 (defn- db->tables [db]
-  (set (map (partial into {}) (db/select [Table :name :description] :db_id (u/the-id db)))))
+  (set (map (partial into {}) (t2/select [Table :name :description] :db_id (u/the-id db)))))
 
 (deftest table-comments-test
   (testing "test basic comments on table"

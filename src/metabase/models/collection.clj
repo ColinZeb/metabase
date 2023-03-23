@@ -278,7 +278,7 @@
 
   Guaranteed to always generate a valid HoneySQL form, so this can be used directly in a query without further checks.
 
-    (db/select Card
+    (t2/select Card
       {:where (collection/visible-collection-ids->honeysql-filter-clause
                (collection/permissions-set->visible-collection-ids
                 @*current-user-permissions-set*))})"
@@ -361,7 +361,7 @@
 (s/defn ^:private ancestors* :- [(mi/InstanceOf Collection)]
   [{:keys [location]}]
   (when-let [ancestor-ids (seq (location-path->ids location))]
-    (db/select [Collection :name :id :personal_owner_id]
+    (t2/select [Collection :name :id :personal_owner_id]
       :id [:in ancestor-ids]
       {:order-by [:location]})))
 
@@ -416,7 +416,7 @@
      (children-location collection) ; -> \"/10/20/30/\";
 
      ;; To get children of this collection:
-     (db/select Collection :location \"/10/20/30/\")"
+     (t2/select Collection :location \"/10/20/30/\")"
   [{:keys [location], :as collection} :- CollectionWithLocationAndIDOrRoot]
   (if (collection.root/is-root-collection? collection)
     "/"
@@ -444,7 +444,7 @@
   [collection :- CollectionWithLocationAndIDOrRoot, & additional-honeysql-where-clauses]
   ;; first, fetch all the descendants of the `collection`, and build a map of location -> children. This will be used
   ;; so we can fetch the immediate children of each Collection
-  (let [location->children (group-by :location (db/select [Collection :name :id :location :description]
+  (let [location->children (group-by :location (t2/select [Collection :name :id :location :description]
                                                  {:where
                                                   (apply
                                                    vector
@@ -473,7 +473,7 @@
 (s/defn descendant-ids :- (s/maybe #{su/IntGreaterThanZero})
   "Return a set of IDs of all descendant Collections of a `collection`."
   [collection :- CollectionWithLocationAndIDOrRoot]
-  (db/select-ids Collection :location [:like (str (children-location collection) \%)]))
+  (t2/select-pks-set Collection :location [:like (str (children-location collection) \%)]))
 
 (s/defn ^:private effective-children-where-clause
   [collection & additional-honeysql-where-clauses]
@@ -523,7 +523,7 @@
 
 (s/defn ^:private effective-children* :- #{(mi/InstanceOf Collection)}
   [collection :- CollectionWithLocationAndIDOrRoot & additional-honeysql-where-clauses]
-  (set (db/select [Collection :id :name :description]
+  (set (t2/select [Collection :id :name :description]
                   {:where (apply effective-children-where-clause collection additional-honeysql-where-clauses)})))
 
 (mi/define-simple-hydration-method effective-children
@@ -564,7 +564,7 @@
                            (parent collection)
                            (cons
                             collection
-                            (db/select-ids Collection :location [:like (str (children-location collection) "%")])))]
+                            (t2/select-pks-set Collection :location [:like (str (children-location collection) "%")])))]
      (perms/collection-readwrite-path collection-or-id))))
 
 (s/defn perms-for-moving :- #{perms/PathSchema}
@@ -607,7 +607,7 @@
     (log/info (trs "Moving Collection {0} and its descendants from {1} to {2}"
                    (u/the-id collection) (:location collection) new-location))
     (db/transaction
-      (db/update! Collection (u/the-id collection) :location new-location)
+      (t2/update! Collection (u/the-id collection) {:location new-location})
       ;; we need to update all the descendant collections as well...
       (db/execute!
        {:update :collection
@@ -616,7 +616,7 @@
 
 (s/defn ^:private collection->descendant-ids :- (s/maybe #{su/IntGreaterThanZero})
   [collection :- CollectionWithLocationAndIDOrRoot, & additional-conditions]
-  (apply db/select-ids Collection
+  (apply t2/select-pks-set Collection
          :location [:like (str (children-location collection) "%")]
          additional-conditions))
 
@@ -687,10 +687,10 @@
   and write perms for every Group with write perms for the source Collection."
   [source-collection-or-id dest-collections-or-ids]
   ;; figure out who has permissions for the source Collection...
-  (let [group-ids-with-read-perms  (db/select-field :group_id Permissions
-                                     :object (perms/collection-read-path source-collection-or-id))
-        group-ids-with-write-perms (db/select-field :group_id Permissions
-                                     :object (perms/collection-readwrite-path source-collection-or-id))]
+  (let [group-ids-with-read-perms  (t2/select-fn-set :group_id Permissions
+                                                     :object (perms/collection-read-path source-collection-or-id))
+        group-ids-with-write-perms (t2/select-fn-set :group_id Permissions
+                                                     :object (perms/collection-readwrite-path source-collection-or-id))]
     ;; ...and insert corresponding rows for each destination Collection
     (db/insert-many! Permissions
       (concat
@@ -880,7 +880,7 @@
 
 (defn- pre-delete [collection]
   ;; Delete all the Children of this Collection
-  (db/delete! Collection :location (children-location collection))
+  (t2/delete! Collection :location (children-location collection))
   ;; You can't delete a Personal Collection! Unless we enable it because we are simultaneously deleting the User
   (when-not *allow-deleting-personal-collections*
     (when (:personal_owner_id collection)
@@ -984,11 +984,11 @@
 
 (defmethod serdes/descendants "Collection" [_model-name id]
   (let [location    (t2/select-one-fn :location Collection :id id)
-        child-colls (set (for [child-id (db/select-ids Collection {:where [:like :location (str location id "/%")]})]
+        child-colls (set (for [child-id (t2/select-pks-set Collection {:where [:like :location (str location id "/%")]})]
                            ["Collection" child-id]))
-        dashboards  (set (for [dash-id (db/select-ids 'Dashboard :collection_id id)]
+        dashboards  (set (for [dash-id (t2/select-pks-set 'Dashboard :collection_id id)]
                            ["Dashboard" dash-id]))
-        cards       (set (for [card-id (db/select-ids 'Card      :collection_id id)]
+        cards       (set (for [card-id (t2/select-pks-set 'Card      :collection_id id)]
                            ["Card" card-id]))]
     (set/union child-colls dashboards cards)))
 
@@ -1135,7 +1135,7 @@
   [users]
   (when (seq users)
     ;; efficiently create a map of user ID -> personal collection ID
-    (let [user-id->collection-id (db/select-field->id :personal_owner_id Collection
+    (let [user-id->collection-id (t2/select-fn->pk :personal_owner_id Collection
                                    :personal_owner_id [:in (set (map u/the-id users))])]
       (assert (map? user-id->collection-id))
       ;; now for each User, try to find the corresponding ID out of that map. If it's not present (the personal

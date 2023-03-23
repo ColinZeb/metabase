@@ -220,7 +220,7 @@
                :pulse-channel-recipient (many-random-fks 40 {} {:pulse_channel_id [:pulse-channel 30]
                                                                 :user_id          [:u 100]})}))
 
-          (is (= 100 (count (db/select-field :email 'User))))
+          (is (= 100 (count (t2/select-fn-set :email 'User))))
 
           (testing "extraction"
             (reset! extraction (into [] (extract/extract-metabase {})))
@@ -606,7 +606,7 @@
                          [model-name 'Card]
                          [dash-name  'Dashboard]]]
                   (testing (format "model %s from link cards are loaded properly" model)
-                   (is (some? (db/select model :name name)))))
+                   (is (some? (t2/select model :name name)))))
 
                 (testing "linkcards are loaded with correct fk"
                   (let [new-db-id    (t2/select-one-pk Database :name db-name)
