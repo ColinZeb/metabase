@@ -20,7 +20,6 @@
    [ring.util.codec :as codec]
    [saml20-clj.core :as saml]
    [saml20-clj.encode-decode :as encode-decode]
-   [toucan.db :as db]
    [toucan2.core :as t2])
   (:import
    (java.net URL)
@@ -142,8 +141,8 @@
   (try
     (f)
     (finally
-      (u/ignore-exceptions (do (db/update-where! User {} :login_attributes nil)
-                               (db/update-where! User {:email "rasta@metabase.com"} :first_name "Rasta" :last_name "Toucan" :sso_source nil))))))
+      (u/ignore-exceptions (do (t2/update! User {} {:login_attributes nil})
+                               (t2/update! User {:email "rasta@metabase.com"} {:first_name "Rasta" :last_name "Toucan" :sso_source nil}))))))
 
 (defmacro ^:private with-saml-default-setup [& body]
   `(with-valid-premium-features-token
@@ -426,7 +425,7 @@
       (fn []
         (with-saml-default-setup
           (try
-            (is (not (db/exists? User :%lower.email "newuser@metabase.com")))
+            (is (not (t2/exists? User :%lower.email "newuser@metabase.com")))
             (let [req-options (saml-post-request-options (new-user-saml-test-response)
                                                          (saml/str->base64 default-redirect-uri))]
               (is (successful-login? (client-full-response :post 302 "/auth/sso" req-options)))
@@ -452,7 +451,7 @@
       (fn []
         (with-saml-default-setup
           (try
-            (is (not (db/exists? User :%lower.email "newuser@metabase.com")))
+            (is (not (t2/exists? User :%lower.email "newuser@metabase.com")))
             ;; login with a user with no givenname or surname attributes
             (let [req-options (saml-post-request-options (new-user-no-names-saml-test-response)
                                                          (saml/str->base64 default-redirect-uri))]

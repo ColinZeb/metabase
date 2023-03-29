@@ -1274,7 +1274,7 @@
   ;; revoke-native-permissions! will delete all entries that would give permissions for native access. Thus if you had
   ;; a root DB entry like `/db/11/` this will delete that too. In that case we want to create a new full schemas entry
   ;; so you don't lose access to all schemas when we modify native access.
-  (let [has-full-access? (db/exists? Permissions :group_id group-id, :object (data-perms-path db-id))]
+  (let [has-full-access? (t2/exists? Permissions :group_id group-id, :object (data-perms-path db-id))]
     (revoke-native-permissions! group-id db-id)
     (when has-full-access?
       (grant-permissions-for-all-schemas! group-id db-id)))
@@ -1379,13 +1379,13 @@
   *  `changes` -- set of changes applied in this revision."
   [model current-revision before changes]
   (when *current-user-id*
-    (db/insert! model
-      ;; manually specify ID here so if one was somehow inserted in the meantime in the fraction of a second since we
-      ;; called `check-revision-numbers` the PK constraint will fail and the transaction will abort
-      :id      (inc current-revision)
-      :before  before
-      :after   changes
-      :user_id *current-user-id*)))
+    (first (t2/insert-returning-instances! model
+                                           ;; manually specify ID here so if one was somehow inserted in the meantime in the fraction of a second since we
+                                           ;; called `check-revision-numbers` the PK constraint will fail and the transaction will abort
+                                           :id      (inc current-revision)
+                                           :before  before
+                                           :after   changes
+                                           :user_id *current-user-id*))))
 
 (defn log-permissions-changes
   "Log changes to the permissions graph."
@@ -1411,7 +1411,7 @@
      (when (or (seq old) (seq new))
        (log-permissions-changes old new)
        (check-revision-numbers old-graph new-graph)
-       (db/transaction
+       (t2/with-transaction [_conn]
         (doseq [[group-id changes] new]
           (update-group-permissions! group-id changes))
         (save-perms-revision! PermissionsRevision (:revision old-graph) old new)
@@ -1436,7 +1436,7 @@
      (when (or (seq old) (seq new))
        (log-permissions-changes old new)
        (check-revision-numbers old-graph new-graph)
-       (db/transaction
+       (t2/with-transaction [_conn]
          (doseq [[group-id changes] new]
            (update-execution-permissions! group-id changes))
          (save-perms-revision! PermissionsRevision (:revision old-graph) old new)))))

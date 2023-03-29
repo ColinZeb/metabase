@@ -48,7 +48,6 @@
    [metabase.util :as u]
    [ring.util.codec :as codec]
    [schema.core :as s]
-   [toucan.db :as db]
    [toucan2.core :as t2]
    [toucan2.protocols :as t2.protocols]
    [toucan2.tools.with-temp :as t2.with-temp])
@@ -1617,7 +1616,7 @@
       (mt/with-temp Dashboard [dashboard]
         (let [{uuid :uuid} (mt/user-http-request :crowberto :post 200
                                                  (format "dashboard/%d/public_link" (u/the-id dashboard)))]
-          (is (db/exists? Dashboard :id (u/the-id dashboard), :public_uuid uuid))
+          (is (t2/exists? Dashboard :id (u/the-id dashboard), :public_uuid uuid))
           (testing "Test that if a Dashboard has already been shared we reuse the existing UUID"
             (is (= uuid
                    (:uuid (mt/user-http-request :crowberto :post 200
@@ -1644,7 +1643,7 @@
         (mt/with-temp Dashboard [dashboard (shared-dashboard)]
           (mt/user-http-request :crowberto :delete 204 (format "dashboard/%d/public_link" (u/the-id dashboard)))
           (is (= false
-                 (db/exists? Dashboard :id (u/the-id dashboard), :public_uuid (:public_uuid dashboard))))))
+                 (t2/exists? Dashboard :id (u/the-id dashboard), :public_uuid (:public_uuid dashboard))))))
 
       (testing "Test that we *cannot* unshare a Dashboard if we are not admins"
         (mt/with-temp Dashboard [dashboard (shared-dashboard)]
@@ -2084,10 +2083,10 @@
         (let [metadata (-> (qp/process-query (:dataset_query native-card))
                            :data :results_metadata :columns)]
           (is (seq metadata) "Did not get metadata")
-          (db/update-where! 'Card {:id model-id}
-                            :result_metadata (json/generate-string
-                                              (assoc-in metadata [0 :id]
-                                                        (mt/id :products :category)))))
+          (t2/update! 'Card {:id model-id}
+                      {:result_metadata (json/generate-string
+                                         (assoc-in metadata [0 :id]
+                                                    (mt/id :products :category)))}))
         ;; ...so instead we create a question on top of this model (note that
         ;; metadata must be present on the model) and use the question on the
         ;; dashboard.

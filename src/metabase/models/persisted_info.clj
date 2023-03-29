@@ -91,7 +91,7 @@
   ([conditions-map]
    (mark-for-pruning! conditions-map "deletable"))
   ([conditions-map state]
-   (db/update-where! PersistedInfo conditions-map :active false, :state state, :state_change_at :%now)))
+   (t2/update! PersistedInfo conditions-map {:active false, :state state, :state_change_at :%now})))
 
 (defn- create-row
   "Marks PersistedInfo as `creating`, these will at some point be persisted by the PersistRefresh task."
@@ -131,7 +131,7 @@
         existing-persisted-info (t2/select-one PersistedInfo :card_id card-id)
         persisted-info (cond
                          (not existing-persisted-info)
-                         (db/insert! PersistedInfo (create-row user-id card))
+                         (first (t2/insert-returning-instances! PersistedInfo (create-row user-id card)))
 
                          (contains? #{"deletable" "off"} (:state existing-persisted-info))
                          (do
