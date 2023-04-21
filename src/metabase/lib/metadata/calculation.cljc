@@ -8,6 +8,8 @@
    [metabase.lib.schema :as lib.schema]
    [metabase.lib.schema.common :as lib.schema.common]
    [metabase.lib.schema.expression :as lib.schema.expresssion]
+   [metabase.lib.schema.temporal-bucketing
+    :as lib.schema.temporal-bucketing]
    [metabase.lib.util :as lib.util]
    [metabase.shared.util.i18n :as i18n]
    [metabase.util :as u]
@@ -152,8 +154,23 @@
   ([query        :- ::lib.schema/query
     stage-number :- :int
     x]
-   (or ((some-fn :effective-type :base-type) (lib.options/options x))
-       (type-of-method query stage-number x))))
+   ;; this logic happens here so we don't need to code up every single individual method to handle these special
+   ;; cases.
+   (let [{:keys [temporal-unit], :as options} (lib.options/options x)]
+     (or
+      ;; If the options map includes `:effective-type` we can assume you know what you are doing and that it is
+      ;; correct and just return it directly.
+      (:effective-type options)
+      ;; If `:temporal-unit` is specified (currently only supported by `:field` clauses), we should return
+      ;; `:type/Integer` if its an extraction operation, e.g. `:month-of-year` always returns an integer; otherwise we
+      ;; can return `:base-type`.
+      (when (and temporal-unit
+                 (contains? lib.schema.temporal-bucketing/datetime-extraction-units temporal-unit))
+        :type/Integer)
+      ;; otherwise if `:base-type` is specified, we can return that.
+      (:base-type options)
+      ;; if none of the special cases are true, fall back to [[type-of-method]].
+      (type-of-method query stage-number x)))))
 
 (defmethod type-of-method :default
   [_query _stage-number expr]
@@ -269,33 +286,33 @@
   ([query        :- ::lib.schema/query
     stage-number :- :int
     x]
-   (display-info-method query stage-number x)))
+   (try
+     (display-info-method query stage-number x)
+     (catch #?(:clj Throwable :cljs js/Error) e
+       (throw (ex-info (i18n/tru "Error calculating display info for {0}: {1}" (lib.dispatch/dispatch-value x) (ex-message e))
+                       {:query query, :stage-number stage-number, :x x}
+                       e))))))
 
 (defn default-display-info
   "Default implementation of [[display-info-method]], available in case you want to use this in a different
   implementation and add additional information to it."
   [query stage-number x]
-  (try
-    (let [x-metadata (metadata query stage-number x)]
-      (merge
-       ;; TODO -- not 100% convinced the FE should actually have access to `:name`, can't it use `:display_name`
-       ;; everywhere? Determine whether or not this is the case.
-       (select-keys x-metadata [:name :display_name :semantic_type])
-       ;; don't return `:base_type`, FE should just use `:effective_type` everywhere and not even need to know
-       ;; `:base_type` exists.
-       (when-let [effective-type ((some-fn :effective_type :base_type) x-metadata)]
-         {:effective_type effective-type})
-       (when-let [table-id (:table_id x-metadata)]
-         {:table (display-info query stage-number (lib.metadata/table query table-id))})
-       (when-let [source (:lib/source x-metadata)]
-         {:is_from_previous_stage (= source :source/previous-stage)
-          :is_from_join           (= source :source/joins)
-          :is_calculated          (= source :source/expressions)
-          :is_implicitly_joinable (= source :source/implicitly-joinable)})))
-    (catch #?(:clj Throwable :cljs js/Error) e
-      (throw (ex-info (i18n/tru "Error calculating display info: {0}" (ex-message e))
-                      {:query query, :stage-number stage-number, :x x}
-                      e)))))
+  (let [x-metadata (metadata query stage-number x)]
+    (merge
+     ;; TODO -- not 100% convinced the FE should actually have access to `:name`, can't it use `:display_name`
+     ;; everywhere? Determine whether or not this is the case.
+     (select-keys x-metadata [:name :display_name :semantic_type])
+     ;; don't return `:base_type`, FE should just use `:effective_type` everywhere and not even need to know
+     ;; `:base_type` exists.
+     (when-let [effective-type ((some-fn :effective_type :base_type) x-metadata)]
+       {:effective_type effective-type})
+     (when-let [table-id (:table_id x-metadata)]
+       {:table (display-info query stage-number (lib.metadata/table query table-id))})
+     (when-let [source (:lib/source x-metadata)]
+       {:is_from_previous_stage (= source :source/previous-stage)
+        :is_from_join           (= source :source/joins)
+        :is_calculated          (= source :source/expressions)
+        :is_implicitly_joinable (= source :source/implicitly-joinable)}))))
 
 (defmethod display-info-method :default
   [query stage-number x]
