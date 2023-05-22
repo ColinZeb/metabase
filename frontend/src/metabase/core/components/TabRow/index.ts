@@ -1,2 +1,2 @@
-export { default } from "./TabRow";
+export * from "./TabRow";
 export * from "./TabRow";

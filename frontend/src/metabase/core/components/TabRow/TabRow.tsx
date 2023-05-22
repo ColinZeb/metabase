@@ -57,8 +57,7 @@ function TabRowInner<T>({
 }
 
 const TabRowInnerWithSize = ExplicitSize()(TabRowInner);
-
-export default function TabRow<T>(props: TabListProps<T>) {
+export function TabRow<T>(props: TabListProps<T>) {
   return <TabRowInnerWithSize {...props} />;
 }
 
