@@ -2,8 +2,8 @@ name: Build + Docker Uberjar
 
 on:
   push:
-    branches:
-      - "master"
+    # branches:
+    #   - "master"
     paths-ignore:
       # config files
       - ".**"
