@@ -2,10 +2,8 @@ name: Build + Docker Uberjar
 
 on:
   push:
-    branches:
-      - "master"
-      - metabot-v3-second-try
-      - feature-visualizer
+    # branches:
+    #   - "master"
     paths-ignore:
       # config files
       - ".**"
@@ -33,6 +31,13 @@ jobs:
       MB_EDITION: ${{ matrix.edition }}
       INTERACTIVE: false
     steps:
+    - name: set lower case owner name
+      run: |
+        echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
+      env:
+        OWNER: '${{ github.repository_owner }}'
+    - name: Convert repository owner to lowercase and set as env var
+      run: echo "REPOSITORY_OWNER_LOWER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
     - name: Check out the code
       uses: actions/checkout@v4
       with:
@@ -86,7 +91,7 @@ jobs:
     needs: check_jar_health
     strategy:
       matrix:
-        edition: [ee, oss, ee-extra]
+        edition: [ee, oss]
     services:
       registry:
         image: registry:2
@@ -155,19 +160,13 @@ jobs:
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-
     - name: Retag and push images if master (ee)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee ${{ github.repository_owner }}/metabase-enterprise-head:latest && docker push ${{ github.repository_owner }}/metabase-enterprise-head:latest
-
-    # TODO: remove when we're done testing metabot
-    - name: Retag and push images if metabot-v3-second-try (ee)
-      if: ${{ (github.ref_name == 'metabot-v3-second-try') && matrix.edition == 'ee' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee ${{ github.repository_owner }}/metabase-enterprise-head:metabot && docker push ${{ github.repository_owner }}/metabase-enterprise-head:metabot
+      if: ${{ (startsWith(github.ref_name,'lab')) && matrix.edition == 'ee' }}
+      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee colinzeb/metabase-enterprise-head:latest && docker push colinzeb/metabase-enterprise-head:latest
 
     - name: Retag and push images if master (oss)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'oss' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss ${{ github.repository_owner }}/metabase-head:latest && docker push ${{ github.repository_owner }}/metabase-head:latest
+      if: ${{ (startsWith(github.ref_name,'lab')) && matrix.edition == 'oss' }}
+      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss colinzeb/metabase-head:latest && docker push colinzeb/metabase-head:latest
 
     - name: Retag and push images if master (ee-extra)
       if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee-extra' }}
@@ -175,58 +174,7 @@ jobs:
 
     - name: Retag and push images if dev branch
       if: ${{ !(startsWith(github.ref_name,'master') || startsWith(github.ref_name,'backport')) && matrix.edition == 'ee' }}
-      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee ${{ github.repository_owner }}/metabase-dev:${{ steps.extract_branch.outputs.branch }} && docker push ${{ github.repository_owner }}/metabase-dev:${{ steps.extract_branch.outputs.branch }}
-
-    - name: Run Trivy vulnerability scanner if master (ee)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee' }}
-      uses: aquasecurity/trivy-action@0.28.0
-      env:
-        TRIVY_OFFLINE_SCAN: true
-      with:
-        image-ref: docker.io/${{ github.repository_owner }}/metabase-enterprise-head:latest
-        format: sarif
-        output: trivy-results.sarif
-        version: "v0.57.1"
-
-    - name: Run Trivy vulnerability scanner if master (oss)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'oss' }}
-      uses: aquasecurity/trivy-action@0.28.0
-      env:
-        TRIVY_OFFLINE_SCAN: true
-      with:
-        image-ref: docker.io/${{ github.repository_owner }}/metabase-head:latest
-        format: sarif
-        output: trivy-results.sarif
-        version: "v0.57.1"
-
-    - name: Run Trivy vulnerability scanner if dev branch
-      if: ${{ !(startsWith(github.ref_name,'master') || startsWith(github.ref_name,'backport')) && matrix.edition == 'ee' }}
-      uses: aquasecurity/trivy-action@0.28.0
-      env:
-        TRIVY_OFFLINE_SCAN: true
-      with:
-        version: "v0.57.1"
-        image-ref: docker.io/${{ github.repository_owner }}/metabase-dev:${{ steps.extract_branch.outputs.branch }}
-        format: sarif
-        output: trivy-results.sarif
-
-    - name: Upload Trivy scan results to GitHub Security tab if master (ee)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee' }}
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-    - name: Upload Trivy scan results to GitHub Security tab if master (oss)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'oss' }}
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-    - name: Upload Trivy scan results to GitHub Security tab if dev branch
-      if: ${{ !(startsWith(github.ref_name,'master') || startsWith(github.ref_name,'backport')) && matrix.edition == 'ee' }}
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
+      run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee colinzeb/metabase-dev:${{ steps.extract_branch.outputs.branch }} && docker push colinzeb/metabase-dev:${{ steps.extract_branch.outputs.branch }}
 
   containerize_multi_arch:
     runs-on: ubuntu-22.04
@@ -306,7 +254,7 @@ jobs:
         run: regctl registry set --tls disabled localhost:5000
       - name: Retag and push ubuntu-based images if master (ee)
         if: ${{ (matrix.edition == 'ee') && (github.ref_name == 'master') }}
-        run: regctl image copy localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee-ubuntu ${{ github.repository_owner }}/metabase-enterprise-head:latest-ubuntu
+        run: regctl image copy localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee-ubuntu colinzeb/metabase-enterprise-head:latest-ubuntu
       - name: Retag and push ubuntu-based images if master (oss)
         if: ${{ (matrix.edition == 'oss') && (github.ref_name == 'master') }}
-        run: regctl image copy localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss-ubuntu ${{ github.repository_owner }}/metabase-head:latest-ubuntu
+        run: regctl image copy localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss-ubuntu colinzeb/metabase-head:latest-ubuntu
