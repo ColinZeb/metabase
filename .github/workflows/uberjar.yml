@@ -132,11 +132,11 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     - name: Retag and push images if master (ee)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'ee' }}
+      if: ${{ (startsWith(github.ref_name,'lab')) && matrix.edition == 'ee' }}
       run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-ee ${{ github.repository_owner }}/metabase-enterprise-head:latest && docker push ${{ github.repository_owner }}/metabase-enterprise-head:latest
 
     - name: Retag and push images if master (oss)
-      if: ${{ (github.ref_name == 'master') && matrix.edition == 'oss' }}
+      if: ${{ (startsWith(github.ref_name,'lab')) && matrix.edition == 'oss' }}
       run: docker tag localhost:5000/metabase-dev:${{ steps.extract_branch.outputs.branch }}-oss ${{ github.repository_owner }}/metabase-head:latest && docker push ${{ github.repository_owner }}/metabase-head:latest
 
     - name: Retag and push images if dev branch
