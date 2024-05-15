@@ -5,11 +5,18 @@ import { getMaxDimensionsSupported } from "metabase/visualizations";
 import { dimensionIsNumeric } from "metabase/visualizations/lib/numeric";
 import { dimensionIsTimeseries } from "metabase/visualizations/lib/timeseries";
 import {
+  columnsAreValid,
   getDefaultDimensionsAndMetrics,
   getFriendlyName,
+  preserveExistingColumnsOrder,
 } from "metabase/visualizations/lib/utils";
 import type { ComputedVisualizationSettings } from "metabase/visualizations/types";
-import { isDimension, isMetric } from "metabase-lib/v1/types/utils/isa";
+import {
+  isAny,
+  isDimension,
+  isMetric,
+  isNumeric,
+} from "metabase-lib/v1/types/utils/isa";
 import type {
   Card,
   CardDisplayType,
@@ -18,6 +25,47 @@ import type {
   RawSeries,
   SeriesOrderSetting,
 } from "metabase-types/api";
+
+export function getDefaultDimensionFilter(display: string) {
+  return display === "scatter" ? isAny : isDimension;
+}
+
+export function getDefaultMetricFilter(display: string) {
+  return display === "scatter" ? isNumeric : isMetric;
+}
+
+export function getAreDimensionsAndMetricsValid(
+  rawSeries: RawSeries,
+  settings: ComputedVisualizationSettings,
+) {
+  return rawSeries.some(
+    ({ card, data }) =>
+      columnsAreValid(
+        card.visualization_settings["graph.dimensions"],
+        data,
+        settings["graph._dimension_filter"],
+      ) &&
+      columnsAreValid(
+        card.visualization_settings["graph.metrics"],
+        data,
+        settings["graph._metric_filter"],
+      ),
+  );
+}
+
+export function getDefaultDimensions(
+  rawSeries: RawSeries,
+  settings: ComputedVisualizationSettings,
+) {
+  return preserveExistingColumnsOrder(
+    settings["graph.dimensions"] ?? [],
+    getDefaultColumns(rawSeries).dimensions,
+  );
+}
+
+export function getDefaultMetrics(rawSeries: RawSeries) {
+  return getDefaultColumns(rawSeries).metrics;
+}
 
 export const STACKABLE_DISPLAY_TYPES = new Set(["area", "bar"]);
 
@@ -135,8 +183,25 @@ export const getIsYAxisLabelEnabledDefault = () => true;
 
 export const getYAxisAutoRangeDefault = () => true;
 
-export const getYAxisAutoRangeIncludeZero = (display: string) =>
-  display !== "scatter";
+export const getYAxisUnpinFromZeroDefault = (display: string) =>
+  display === "scatter";
+
+export const isYAxisUnpinFromZeroValid = (
+  seriesDisplays: string[],
+  settings: ComputedVisualizationSettings,
+) => {
+  if (
+    !settings["graph.y_axis.auto_range"] ||
+    settings["stackable.stack_type"] != null
+  ) {
+    return false;
+  }
+
+  return seriesDisplays.every(
+    display =>
+      display !== "area" && display !== "bar" && display !== "waterfall",
+  );
+};
 
 export const getDefaultXAxisTitle = (
   dimensionColumn: DatasetColumn | undefined,

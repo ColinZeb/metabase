@@ -45,15 +45,19 @@ import histogramTicks45Degrees from "./histogram-ticks-45-degrees.json";
 import histogramTicks90Degrees from "./histogram-ticks-90-degrees.json";
 import imageCutOff37275 from "./image-cut-off-37275.json";
 import incorrectLabelYAxisSplit41285 from "./incorrect-label-y-axis-split-41285.json";
+import lineChartBrokenDimensionsMetricsSettings from "./line-chart-broken-dimensions-metrics-settings.json";
 import lineCustomYAxisRangeEqualsExtents from "./line-custom-y-axis-range-equals-extents.json";
 import lineFullyNullDimension37902 from "./line-fully-null-dimension-37902.json";
 import lineLinearXScaleUnsorted from "./line-linear-x-scale-unsorted.json";
 import lineLinearXScale from "./line-linear-x-scale.json";
 import lineLogYScaleNegative from "./line-log-y-scale-negative.json";
 import lineLogYScale from "./line-log-y-scale.json";
+import lineReplaceMissingValuesZero from "./line-replace-missing-values-zero.json";
+import lineSettings from "./line-settings.json";
 import lineShowDotsAuto from "./line-show-dots-auto.json";
 import lineShowDotsOff from "./line-show-dots-off.json";
 import lineShowDotsOn from "./line-show-dots-on.json";
+import lineUnpinFromZero from "./line-unpin-from-zero.json";
 import logYScaleCustomYAxisRange from "./log-y-scale-custom-y-axis-range.json";
 import longDimensionNameCutOff37420 from "./long-dimension-name-cut-off-37420.json";
 import messedUpAxis from "./messed-up-axis.json";
@@ -168,4 +172,8 @@ export const data = {
   noGoodAxisSplit,
   histogramTicks45Degrees,
   histogramTicks90Degrees,
+  lineUnpinFromZero,
+  lineSettings,
+  lineReplaceMissingValuesZero,
+  lineChartBrokenDimensionsMetricsSettings,
 };
