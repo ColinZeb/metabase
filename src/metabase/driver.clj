@@ -16,6 +16,7 @@
    [metabase.util :as u]
    [metabase.util.i18n :refer [deferred-tru tru]]
    [metabase.util.log :as log]
+   [metabase.util.malli :as mu]
    [potemkin :as p]
    [toucan2.core :as t2]))
 
@@ -51,6 +52,11 @@
     timezone-id
     (str (t/zone-id))))
 
+(defn- update-send-pulse-triggers-timezone!
+  []
+  (classloader/require 'metabase.task.send-pulses)
+  ((resolve 'metabase.task.send-pulses/update-send-pulse-triggers-timezone!)))
+
 (defsetting report-timezone
   (deferred-tru "Connection timezone to use when executing queries. Defaults to system timezone.")
   :visibility :settings-manager
@@ -59,7 +65,8 @@
   :setter
   (fn [new-value]
     (setting/set-value-of-type! :string :report-timezone new-value)
-    (notify-all-databases-updated)))
+    (notify-all-databases-updated)
+    (update-send-pulse-triggers-timezone!)))
 
 (defsetting report-timezone-short
   "Current report timezone abbreviation"
@@ -676,8 +683,8 @@
   dispatch-on-initialized-driver
   :hierarchy #'hierarchy)
 
-(defmethod escape-alias ::driver
-  [_driver alias-name]
+(mu/defmethod escape-alias ::driver :- :string
+  [_driver alias-name :- :string]
   (driver.impl/truncate-alias alias-name))
 
 (defmulti humanize-connection-error-message

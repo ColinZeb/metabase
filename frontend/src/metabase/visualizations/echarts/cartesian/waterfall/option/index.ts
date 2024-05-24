@@ -4,9 +4,10 @@ import type { LabelLayoutOptionCallback } from "echarts/types/src/util/types";
 import { X_AXIS_DATA_KEY } from "metabase/visualizations/echarts/cartesian/constants/dataset";
 import { CHART_STYLE } from "metabase/visualizations/echarts/cartesian/constants/style";
 import type {
-  BaseCartesianChartModel,
+  CartesianChartModel,
   ChartDataset,
-  DataKey,
+  LabelFormatter,
+  WaterfallChartModel,
 } from "metabase/visualizations/echarts/cartesian/model/types";
 import {
   buildEChartsLabelOptions,
@@ -74,7 +75,7 @@ const getLabelLayoutFn = (
 };
 
 const computeWaterfallBarWidth = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   boundaryWidth: number,
 ) => {
   if (isCategoryAxis(chartModel.xAxisModel)) {
@@ -93,9 +94,10 @@ const computeWaterfallBarWidth = (
 };
 
 export const buildEChartsWaterfallSeries = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   settings: ComputedVisualizationSettings,
   chartMeasurements: ChartMeasurements,
+  labelFormatter: LabelFormatter | undefined,
   renderingContext: RenderingContext,
 ) => {
   const { seriesModels, transformedDataset: dataset } = chartModel;
@@ -105,26 +107,21 @@ export const buildEChartsWaterfallSeries = (
     chartMeasurements.boundaryWidth,
   );
 
-  const buildLabelOption = (key: DataKey) => ({
+  const buildLabelOption = () => ({
     ...buildEChartsLabelOptions(
       seriesModel,
-      dataset,
       chartModel.yAxisScaleTransforms,
-      settings,
       renderingContext,
-      settings["graph.show_values"],
+      labelFormatter,
     ),
-    formatter: getDataLabelFormatter(
-      seriesModel,
-      dataset,
-      chartModel.yAxisScaleTransforms,
-      settings,
-      key,
-      renderingContext,
-      {
-        negativeInParentheses: true,
-      },
-    ),
+    formatter:
+      labelFormatter &&
+      getDataLabelFormatter(
+        seriesModel,
+        chartModel.yAxisScaleTransforms,
+        labelFormatter,
+        WATERFALL_VALUE_KEY,
+      ),
   });
 
   const series: WaterfallSeriesOption[] = [
@@ -179,7 +176,7 @@ export const buildEChartsWaterfallSeries = (
         y: WATERFALL_END_KEY,
         x: X_AXIS_DATA_KEY,
       },
-      label: buildLabelOption(WATERFALL_VALUE_KEY),
+      label: buildLabelOption(),
       animationDuration: 0,
     },
   ];
@@ -206,7 +203,7 @@ export const buildEChartsWaterfallSeries = (
 };
 
 export const getWaterfallChartOption = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: WaterfallChartModel,
   chartWidth: number,
   chartMeasurements: ChartMeasurements,
   timelineEventsModel: TimelineEventsModel | null,
@@ -228,6 +225,7 @@ export const getWaterfallChartOption = (
     chartModel,
     settings,
     chartMeasurements,
+    chartModel.waterfallLabelFormatter,
     renderingContext,
   );
 

@@ -18,7 +18,7 @@ import {
   isTimeSeriesAxis,
 } from "metabase/visualizations/echarts/cartesian/model/guards";
 import type {
-  BaseCartesianChartModel,
+  CartesianChartModel,
   ChartDataset,
   DataKey,
   Datum,
@@ -76,7 +76,7 @@ export const parseDataKey = (dataKey: DataKey) => {
 };
 
 const findSeriesModelIndexById = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   seriesId?: string,
 ) => {
   if (seriesId == null) {
@@ -105,7 +105,7 @@ const getSameCardDataKeys = (
 };
 
 export const getEventDimensions = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   datum: Datum,
   dimensionModel: DimensionModel,
   seriesModel: SeriesModel,
@@ -143,7 +143,7 @@ export const getEventDimensions = (
 };
 
 const getEventColumnsData = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   seriesIndex: number,
   dataIndex: number,
 ): DataPoint[] => {
@@ -192,7 +192,7 @@ const getEventColumnsData = (
 };
 
 const getTooltipFooterData = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   display: string,
   seriesIndex: number,
   dataIndex: number,
@@ -261,11 +261,20 @@ const getTooltipFooterData = (
 };
 
 const getStackedTooltipModel = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   settings: ComputedVisualizationSettings,
   seriesIndex: number,
   dataIndex: number,
 ) => {
+  const hoveredSeries = chartModel.seriesModels[seriesIndex];
+  const seriesStack = chartModel.stackModels.find(stackModel =>
+    stackModel.seriesKeys.includes(hoveredSeries.dataKey),
+  );
+
+  if (!seriesStack) {
+    return undefined;
+  }
+
   const column =
     chartModel.leftAxisModel?.column ?? chartModel.rightAxisModel?.column;
 
@@ -278,17 +287,23 @@ const getStackedTooltipModel = (
       }),
     );
 
-  const rows: TooltipRowModel[] = chartModel.seriesModels.map(seriesModel => {
-    return {
-      name: seriesModel.name,
-      color: seriesModel.color,
-      value: chartModel.dataset[dataIndex][seriesModel.dataKey],
-      formatter,
-    };
-  });
+  const rows: (TooltipRowModel & { dataKey: DataKey })[] =
+    chartModel.seriesModels
+      .filter(seriesModel =>
+        seriesStack?.seriesKeys.includes(seriesModel.dataKey),
+      )
+      .map(seriesModel => {
+        return {
+          dataKey: seriesModel.dataKey,
+          name: seriesModel.name,
+          color: seriesModel.color,
+          value: chartModel.dataset[dataIndex][seriesModel.dataKey],
+          formatter,
+        };
+      });
   const [headerRows, bodyRows] = _.partition(
     rows,
-    (_row, index) => index === seriesIndex,
+    row => row.dataKey === hoveredSeries.dataKey,
   );
 
   const dimensionValue = chartModel.dataset[dataIndex][X_AXIS_DATA_KEY];
@@ -363,7 +378,7 @@ const isValidDatumElement = (
 };
 
 export const getSeriesHoverData = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   settings: ComputedVisualizationSettings,
   display: string,
   event: EChartsSeriesMouseEvent,
@@ -444,12 +459,8 @@ export const getTimelineEventsHoverData = (
   );
   const element = event.event.event.target as Element;
 
-  if (element?.nodeName !== "image") {
-    return null;
-  }
-
   return {
-    element,
+    element: element?.nodeName === "image" ? element : undefined,
     timelineEvents: hoveredTimelineEvents,
   };
 };
@@ -477,7 +488,7 @@ export const getGoalLineHoverData = (
 };
 
 export const getSeriesClickData = (
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   settings: ComputedVisualizationSettings,
   event: EChartsSeriesMouseEvent,
 ): ClickObject | undefined => {
@@ -517,7 +528,7 @@ export const getSeriesClickData = (
 export const getBrushData = (
   rawSeries: RawSeries,
   metadata: Metadata,
-  chartModel: BaseCartesianChartModel,
+  chartModel: CartesianChartModel,
   event: EChartsSeriesBrushEndEvent,
 ) => {
   const range = event.areas[0].coordRange;

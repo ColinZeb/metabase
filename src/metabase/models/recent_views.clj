@@ -2,32 +2,45 @@
   "The Recent Views table is used to track the most recent views of objects such as Cards, Models, Tables, Dashboards,
   and Collections for each user. For an up to date list, see [[models-of-interest]].
 
-  It offers a simple API to add a recent, and fetch the list of recents.
+  It offers a simple API to add a recent view item, and fetch the list of recents.
 
-  Fetch recent items: `(recent-view/get-list <user-id>)`
-                        see: [[get-list]]
-  add recent item:    `(recent-views/update-users-recent-views! <user-id> <model> <model-id>)`
-                        see: [[update-users-recent-views!]]
+  Adding Recent Items:
+     `(recent-views/update-users-recent-views! <user-id> <model> <model-id>)`
+       see: [[update-users-recent-views!]]
+  Fetching Recent Items:
+     `(recent-view/get-list <user-id>)`
+       returns a sequence of [[Item]]
+       see also: [[get-list]]
 
-  When adding a recent item, duplicates will be removed, and [[*recent-views-stored-per-user-per-model*]] (20
-  currently) are kept of each entity type. E.G., if you were to view lots of _cards_, it would not push collections and
-  dashboards out of your recents."
+  The recent items are partition into model buckets. So, when adding a recent item, duplicates will be removed, and if
+  there are more than [[*recent-views-stored-per-user-per-model*]] (20 currently) of any entity type, the oldest
+  one(s) will be deleted, so that the count stays at least 20.
+
+  E.G., if you were to view lots of _cards_, it would not push collections and dashboards out of your recents."
   (:require
    [clojure.set :as set]
+   [colorize.core :as colorize]
    [java-time.api :as t]
+   [malli.core :as mc]
+   [malli.error :as me]
+   [medley.core :as m]
+   [metabase.config :as config]
+   [metabase.models.collection :as collection]
    [metabase.models.collection.root :as root]
    [metabase.models.interface :as mi]
    [metabase.util :as u]
    [metabase.util.honey-sql-2 :as h2x]
+   [metabase.util.log :as log]
    [metabase.util.malli :as mu]
+   [metabase.util.malli.registry :as mr]
    [metabase.util.malli.schema :as ms]
-   [methodical.core :as m]
+   [methodical.core :as methodical]
    [steffan-westcott.clj-otel.api.trace.span :as span]
    [toucan2.core :as t2]))
 
 (doto :model/RecentViews (derive :metabase/model))
 
-(m/defmethod t2/table-name :model/RecentViews [_model] :recent_views)
+(methodical/defmethod t2/table-name :model/RecentViews [_model] :recent_views)
 
 (t2/define-before-insert :model/RecentViews
   [log-entry]
@@ -126,12 +139,12 @@
   [:and {:registry {::pc [:map
                           [:id [:or [:int {:min 1}] [:= "root"]]]
                           [:name :string]
-                          [:authority_level [:enum :official nil]]]}}
+                          [:authority_level [:enum "official" nil]]]}}
    [:map
     [:id [:int {:min 1}]]
     [:name :string]
     [:description [:maybe :string]]
-    [:model [:enum :dataset :card :dashboard :collection :table]]
+    [:model [:enum :dataset :card :metric :dashboard :collection :table]]
     [:can_write :boolean]
     [:timestamp :string]]
    [:multi {:dispatch :model}
@@ -142,6 +155,10 @@
     [:dataset [:map
                [:parent_collection ::pc]
                [:moderated_status [:enum "verified" nil]]]]
+    [:metric [:map
+              [:parent_collection ::pc]
+              [:display :string]
+              [:moderated_status [:enum "verified" nil]]]]
     [:dashboard [:map [:parent_collection ::pc]]]
     [:table [:map
              [:display_name :string]
@@ -150,63 +167,86 @@
                          [:name :string]]]]]
     [:collection [:map
                   [:parent_collection ::pc]
-                  [:authority_level [:enum :official nil]]]]]])
+                  [:effective_location :string]
+                  [:authority_level [:enum "official" nil]]]]]])
 
 (defmulti fill-recent-view-info
-  "Fills in additional information for a recent view, such as the display name of the object.
+  "Fills in additional information for a recent view, such as the display name of the object, returns [[Item]].
 
-  - When called from `GET /popular_items`, the `model_object` field will be present, and should be used instead of
-  querying the database for the object."
+  For most items, we gather information from the db in a single query, but certain things are more prudent to check
+  with code (e.g. a collection's parent collection.)
+
+  Sometimes we get an invalid or inconsistent recent view record. (E.g. the parent collection for an item no longer
+  exists). In these cases we simply do not include the value in the recent views response."
   (fn [{:keys [model #_model_id #_timestamp card_type]}]
-    (or (get {"model" :dataset
-              "question" :card} card_type)
+    (or (get {"model" :dataset "question" :card "metric" :metric} card_type)
         (keyword model))))
 
 (defmethod fill-recent-view-info :default [m] (throw (ex-info "Unknown model" {:model m})))
 
-(defn get-parent-coll
-  "Gets parent collection info for a recent view item."
-  [coll-id-or-coll]
-  (-> (cond (map? coll-id-or-coll) (if-let [parent-id (:parent_id (t2/hydrate coll-id-or-coll :parent_id))]
-                                     ;; hydrate the effective location on the collection
-                                     (t2/select-one :model/Collection parent-id)
-                                     (root/root-collection-with-ui-details {}))
-            (nil? coll-id-or-coll) (root/root-collection-with-ui-details {})
-            :else (t2/select-one :model/Collection coll-id-or-coll))
-      (select-keys [:id :name :authority_level])
-      (update :authority_level #(some-> % keyword))))
-
-(mu/defn get-moderated-status
-  "Returns moderated_status for a given model and model-id.
-
-  (Currently only used for cards and models, but ought to be extended to dashboards in the future)"
-  [model :- [:enum :card] model-id] :- [:maybe "verified"]
-  (-> (t2/select-one [:model/ModerationReview :status]
-                     {:where [:and
-                              [:= :moderated_item_id model-id]
-                              [:= :moderated_item_type (name model)]
-                              [:= :most_recent true]]})
-      :status))
-
-(defn ellide-archived
-  "Returns nil if the model is archived, otherwise returns the model.
+(defn- ellide-archived
+  "Returns the model when it's not archived.
   We use this to ensure that archived models are not returned in the recent views."
   [model]
-  (cond
-    (false? (:archived model)) model
+  (when (false? (:archived model)) model))
 
-    ;; The model for this recent view doesn't exist in the database, so we can't check if it's archived, so just
-    ;; filter it out.
-    (not model) nil
+(defn- root-coll []
+  (select-keys
+   (into {} (root/root-collection-with-ui-details {}))
+   [:id :name :authority_level]))
 
-    (true? (:archived model)) nil
+;; ================== Recent Cards ==================
 
-    (nil? (:archived model))
-    (throw (ex-info "Archived field is nil" {:model model}))))
+(defn card-recents
+  "Query to select card data"
+  [card-ids]
+  (if-not (seq card-ids)
+    []
+    (t2/select :model/Card
+               {:select [:card.name
+                         :card.description
+                         :card.archived
+                         :card.id
+                         :card.display
+                         :card.trashed_from_collection_id
+                         [:card.collection_id :entity-coll-id]
+                         [:mr.status :moderated-status]
+                         [:collection.id :collection_id]
+                         [:collection.name :collection_name]
+                         [:collection.authority_level :collection_authority_level]]
+                :from [[:report_card :card]]
+                :where [:in :card.id card-ids]
+                :left-join [[:moderation_review :mr]
+                            [:and
+                             [:= :mr.moderated_item_type "card"]
+                             [:= :mr.most_recent true]
+                             [:in :mr.moderated_item_id card-ids]]
+                            [:collection]
+                            [:and
+                             [:= :collection.id :card.collection_id]
+                             [:= :collection.archived false]]]})))
+
+(defn- fill-parent-coll [model-object]
+  (if (:collection_id model-object)
+    {:id (:collection_id model-object)
+     :name (:collection_name model-object)
+     :authority_level (some-> (:collection_authority_level model-object) name)}
+    (root-coll)))
+
+(defn- parent-collection-valid?
+  "Returns true when a parent collection actually exists for this item.
+
+  Careful: the root collection will have a nil `colelction_id` and a nil `collection_name`. We return false when the
+  collection has a `collection_id`, and a nil `collection_name`."
+  [{:keys [collection_id entity-coll-id]}]
+  (not (and entity-coll-id (nil? collection_id))))
 
 (defmethod fill-recent-view-info :card [{:keys [_model model_id timestamp model_object]}]
-  (when-let [card (ellide-archived
-                   (or model_object (t2/select-one :model/Card model_id)))]
+  (when-let [card (and
+                   (mi/can-read? model_object)
+                   ;; The parent collection exists:
+                   (parent-collection-valid? model_object)
+                   (ellide-archived model_object))]
     {:id model_id
      :name (:name card)
      :description (:description card)
@@ -214,12 +254,15 @@
      :model :card
      :can_write (mi/can-write? card)
      :timestamp (str timestamp)
-     :moderated_status (get-moderated-status :card model_id)
-     :parent_collection (get-parent-coll (:collection_id card))}))
+     :moderated_status (:moderated-status card)
+     :parent_collection (fill-parent-coll card)}))
 
 (defmethod fill-recent-view-info :dataset [{:keys [_model model_id timestamp model_object]}]
-  (when-let [dataset (ellide-archived
-                      (or model_object (t2/select-one :model/Card model_id)))]
+  (when-let [dataset (and
+                      (mi/can-read? model_object)
+                      ;; If the parent collection no longer exists, there won't be a name.
+                      (parent-collection-valid? model_object)
+                      (ellide-archived model_object))]
     {:id model_id
      :name (:name dataset)
      :description (:description dataset)
@@ -227,49 +270,135 @@
      :can_write (mi/can-write? dataset)
      :timestamp (str timestamp)
      ;; another table that doesn't differentiate between card and dataset :cry:
-     :moderated_status (get-moderated-status :card model_id)
-     :parent_collection (get-parent-coll (:collection_id dataset))}))
+     :moderated_status (:moderated-status dataset)
+     :parent_collection (fill-parent-coll dataset)}))
+
+(defmethod fill-recent-view-info :metric [{:keys [_model model_id timestamp model_object]}]
+  (when-let [metric (and
+                     (mi/can-read? model_object)
+                     (parent-collection-valid? model_object)
+                     (ellide-archived model_object))]
+    {:id model_id
+     :name (:name metric)
+     :description (:description metric)
+     :display (some-> metric :display name)
+     :model :metric
+     :can_write (mi/can-write? metric)
+     :timestamp (str timestamp)
+     :moderated_status (:moderated-status metric)
+     :parent_collection (if (:collection-id metric)
+                          {:id (:collection-id metric)
+                           :name (:collection-name metric)
+                           :authority_level (:collection-authority-level metric)}
+                          (root-coll))}))
+
+;; ================== Recent Dashboards ==================
+
+(defn- dashboard-recents
+  "Query to select recent dashboard data"
+  [dashboard-ids]
+  (if (empty? dashboard-ids)
+    []
+    (t2/select :model/Dashboard
+               {:select [:dash.id
+                         :dash.name
+                         :dash.description
+                         :dash.archived
+                         :dash.trashed_from_collection_id
+                         [:dash.collection_id :entity-coll-id]
+                         [:c.id :collection_id]
+                         [:c.name :collection_name]
+                         [:c.authority_level :collection_authority_level]]
+                :from [[:report_dashboard :dash]]
+                :where [:in :dash.id dashboard-ids]
+                :left-join [[:collection :c]
+                            [:and
+                             [:= :c.id :dash.collection_id]
+                             [:= :c.archived false]]]})))
 
 (defmethod fill-recent-view-info :dashboard [{:keys [_model model_id timestamp model_object]}]
-  (when-let [dashboard (ellide-archived
-                        (or model_object (t2/select-one :model/Dashboard model_id)))]
+  (when-let [dashboard (and (mi/can-read? model_object)
+                            (parent-collection-valid? model_object)
+                            (ellide-archived model_object))]
     {:id model_id
      :name (:name dashboard)
      :description (:description dashboard)
      :model :dashboard
      :can_write (mi/can-write? dashboard)
      :timestamp (str timestamp)
-     :parent_collection (get-parent-coll (:collection_id dashboard))}))
+     :parent_collection (fill-parent-coll dashboard)}))
+
+;; ================== Recent Collections ==================
+
+(defn- collection-recents
+  "Query to select recent collection data"
+  [collection-ids]
+  (if-not (seq collection-ids)
+    []
+    (let [ ;; these have their parent collection id in effective_location, but we need the id, name, and authority_level.
+          collections (t2/select :model/Collection
+                                 {:select [:id :name :description :authority_level
+                                           :archived :location :trashed_from_location]
+                                  :where [:and
+                                          [:in :id collection-ids]
+                                          [:= :archived false]]})
+          coll->parent-id (fn [c]
+                            (some-> c collection/effective-location-path collection/location-path->ids last))
+          parent-ids (into #{} (keep coll->parent-id) collections)
+          id->parent-coll (merge {nil (root-coll)}
+                                 (when (seq parent-ids)
+                                   (t2/select-pk->fn identity :model/Collection
+                                                     {:select [:id :name :authority_level]
+                                                      :where [:in :id parent-ids]})))]
+      ;; replace the collection ids with their collection data:
+      (map
+       (fn effective-collection-assocer [c]
+         (assoc c
+                :effective_parent (->> (coll->parent-id c) id->parent-coll)
+                :effective_location (collection/effective-location-path c)))
+       collections))))
 
 (defmethod fill-recent-view-info :collection [{:keys [_model model_id timestamp model_object]}]
-  (when-let [collection (ellide-archived
-                         (or model_object (t2/select-one :model/Collection model_id)))]
+  (when-let [collection (and
+                         (mi/can-read? model_object)
+                         (ellide-archived model_object))]
     {:id model_id
      :name (:name collection)
      :description (:description collection)
      :model :collection
      :can_write (mi/can-write? collection)
      :timestamp (str timestamp)
-     :authority_level (:authority_level collection)
-     :parent_collection (get-parent-coll collection)}))
+     :authority_level (some-> (:authority_level collection) name)
+     :effective_location (:effective_location collection)
+     :parent_collection (or (:effective_parent collection) (root-coll))}))
 
-(mu/defn ellide-inactive
-  "Used to filter out inactive tables in [[fill-recent-view-info]] for `:table`."
-  [model-object :- [:maybe [:map [:id [:int {:min 1}]]]]
-   model-id]
-  (if-let [is-active? (and model-object
-                           (contains? model-object :active)
-                           (:active model-object))]
-    [model-object is-active?]
-    ;; if we don't have the :active key, we need to do a query for it:
-    (let [table (t2/select-one :model/Table model-id)]
-      (if (nil? table)
-        [nil nil]
-        [table (:active table)]))))
+;; ================== Recent Tables ==================
+
+(defn- table-recents
+  "Query to select recent table data"
+  [table-ids]
+  (t2/select :model/Table
+             {:select [:t.id :t.name :t.description
+                       :t.display_name :t.active :t.visibility_type
+                       [:db.name :database-name]
+                       [:db.id :database-id]
+                       [:db.initial_sync_status :initial-sync-status]]
+              :from [[:metabase_table :t]]
+              :where (let [base-condition [:or
+                                           [:= :visibility_type nil]
+                                           [:!= :visibility_type "hidden"]]]
+                       (if (seq table-ids)
+                         [:and base-condition [:in :t.id table-ids]]
+                         base-condition))
+              :left-join [[:metabase_database :db]
+                          [:= :db.id :t.db_id]]}))
 
 (defmethod fill-recent-view-info :table [{:keys [_model model_id timestamp model_object]}]
-  (let [[table is-active?] (ellide-inactive model_object model_id)]
-    (when (and table is-active?)
+  (let [table model_object]
+    (when (and (not= "hidden" (:visibility_type table))
+               (:database-name table)
+               (:active table)
+               (mi/can-read? table))
       {:id model_id
        :name (:name table)
        :description (:description table)
@@ -277,15 +406,9 @@
        :display_name (:display_name table)
        :can_write (mi/can-write? table)
        :timestamp (str timestamp)
-       :database (let [{:keys [name initial_sync_status]}
-                       (t2/select-one [:model/Database :name :initial_sync_status]
-                                      (:db_id table))]
-                   {:id (:db_id table)
-                    :name name
-                    :initial_sync_status initial_sync_status})})))
-
-(mu/defn ^:private model->return-model [model :- :keyword]
-  (if (#{:question} model) :card model))
+       :database {:id (:database-id table)
+                  :name (:database-name table)
+                  :initial_sync_status (:initial-sync-status table)}})))
 
 (defn ^:private do-query [user-id]
   (t2/select :model/RecentViews {:select [:rv.* [:rc.type :card_type]]
@@ -298,19 +421,58 @@
                                               [:= :rc.id :rv.model_id]]]
                                  :order-by [[:rv.timestamp :desc]]}))
 
-(defn- post-process [recent-view]
-  (when recent-view
-    (when-let [filled-recent (fill-recent-view-info recent-view)]
-      (-> filled-recent
-          (dissoc :card_type)
-          (update :model model->return-model)))))
+(mu/defn ^:private model->return-model [model :- :keyword]
+  (if (= :question model) :card model))
 
-(mu/defn get-list :- [:sequential Item]
-  "Gets all recent views for a given user. Returns a list of at most 20 `Item` maps per [[models-of-interest]].
+(defn- post-process [entity->id->data recent-view]
+  (when recent-view
+    (let [entity (some-> recent-view :model keyword)
+          id (some-> recent-view :model_id)]
+      (when-let [model-object (get-in entity->id->data [entity id])]
+        (some-> (assoc recent-view :model_object model-object)
+                fill-recent-view-info
+                (dissoc :card_type)
+                (update :model model->return-model))))))
+
+(defn- get-entity->id->data [views]
+  (let [{card-ids       :card
+         dashboard-ids  :dashboard
+         collection-ids :collection
+         table-ids      :table} (as-> views views
+                                  (group-by (comp keyword :model) views)
+                                  (update-vals views #(mapv :model_id %)))]
+    {:card       (m/index-by :id (card-recents card-ids))
+     :dashboard  (m/index-by :id (dashboard-recents dashboard-ids))
+     :collection (m/index-by :id (collection-recents collection-ids))
+     :table      (m/index-by :id (table-recents table-ids))}))
+
+(def ^:private ItemValidator (mc/validator Item))
+
+(defn error-avoider
+  "The underlying data model here can become inconsistent, and it's better to return the recents data that we know is
+  correct than throw an error. So, in prod, we silently filter out known-bad recent views."
+  [item]
+  (if (and item (ItemValidator item))
+    item
+    (when-not config/is-prod?
+      (log/errorf (colorize/red "Invalid recent view item: %s reason: %s")
+                  (pr-str item)
+                  (me/humanize (mr/explain Item item))))))
+
+(defn get-list
+  "Gets all recent views for a given user. Returns a list of at most 20 [[Item]]s per [[models-of-interest]].
 
   [[do-query]] can return nils, and we remove them here becuase models can be deleted, and we don't want to show those
-  in the recent views."
+  in the recent views.
+
+  Returns a sequence of [[Item]]s. The reason this isn't a `mu/defn`, is that error-avoider validates each Item in the
+  sequence, so there's no need to do it twice."
   [user-id]
-  (into [] (comp (map post-process)
-                 (remove nil?))
-        (do-query user-id)))
+  (if-let [views (not-empty (do-query user-id))]
+    (let [entity->id->data (get-entity->id->data views)]
+      (into []
+            (comp
+             (map (partial post-process entity->id->data))
+             (keep error-avoider))
+            views))
+    []))
