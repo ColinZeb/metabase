@@ -73,7 +73,7 @@ const getCellBackgroundColor = ({
     return alpha("bg-black", 0.1);
   }
 
-  return color(backgroundColor ?? "white");
+  return color(backgroundColor ?? "bg-white");
 };
 
 const getCellHoverBackground = (
@@ -95,7 +95,7 @@ const getColor = ({
   isNightMode,
 }: PivotTableCellProps & { theme: MantineTheme }) => {
   if (isNightMode) {
-    return color("white");
+    return color("text-white");
   }
 
   return color(theme.other.table.cell.textColor);
@@ -170,7 +170,7 @@ export const PivotTableRoot = styled.div<PivotTableRootProps>`
 
 export const PivotTableSettingLabel = styled.span`
   font-weight: 700;
-  color: ${color("text-dark")};
+  color: var(--mb-color-text-dark);
 `;
 
 export const ResizeHandle = styled.div`
@@ -184,10 +184,10 @@ export const ResizeHandle = styled.div`
   cursor: ew-resize;
 
   &:active {
-    background-color: ${color("brand")};
+    background-color: var(--mb-color-brand);
   }
 
   &:hover {
-    background-color: ${color("brand")};
+    background-color: var(--mb-color-brand);
   }
 `;

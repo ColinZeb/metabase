@@ -5,7 +5,6 @@ import EntityItem from "metabase/components/EntityItem";
 import IconButtonWrapper from "metabase/components/IconButtonWrapper";
 import Link from "metabase/core/components/Link";
 import AdminS from "metabase/css/admin.module.css";
-import { color } from "metabase/lib/colors";
 import BaseModelDetailLink from "metabase/models/components/ModelDetailLink";
 import { FixedSizeIcon } from "metabase/ui";
 
@@ -13,7 +12,7 @@ import type { ResponsiveProps } from "./utils";
 import { getContainerQuery } from "./utils";
 
 export const Table = styled.table<{ isInDragLayer?: boolean }>`
-  background-color: ${color("white")};
+  background-color: var(--mb-color-bg-white);
   table-layout: fixed;
   border-collapse: unset;
   border-radius: 0.5rem;
@@ -21,16 +20,16 @@ export const Table = styled.table<{ isInDragLayer?: boolean }>`
 
   thead {
     th {
-      border-top: 1px solid ${color("border")};
+      border-top: 1px solid var(--mb-color-border);
 
       &:first-of-type {
         border-start-start-radius: 8px;
-        border-inline-start: 1px solid ${color("border")};
+        border-inline-start: 1px solid var(--mb-color-border);
       }
 
       &:last-child {
         border-start-end-radius: 8px;
-        border-inline-end: 1px solid ${color("border")};
+        border-inline-end: 1px solid var(--mb-color-border);
       }
     }
   }
@@ -56,7 +55,7 @@ export const ColumnHeader = styled.th<ResponsiveProps>`
     padding: 0.75em 1em 0.75em;
   }
   font-weight: bold;
-  color: ${color("text-medium")};
+  color: var(--mb-color-text-medium);
   ${hideResponsively}
 `;
 
@@ -85,7 +84,7 @@ export const ItemLink = styled(Link)`
   align-items: center;
 
   &:hover {
-    color: ${color("brand")};
+    color: var(--mb-color-brand);
   }
 `;
 
@@ -98,7 +97,7 @@ export const ItemNameCell = styled.td`
 
   &:hover {
     ${ItemLink} {
-      color: ${color("brand")};
+      color: var(--mb-color-brand);
     }
 
     cursor: pointer;
@@ -110,7 +109,7 @@ export const SortingIcon = styled(FixedSizeIcon)`
 `;
 
 export const DescriptionIcon = styled(FixedSizeIcon)`
-  color: ${color("text-medium")};
+  color: var(--mb-color-text-medium);
 `;
 
 SortingIcon.defaultProps = {
@@ -118,7 +117,7 @@ SortingIcon.defaultProps = {
 };
 
 export const ModelDetailLink = styled(BaseModelDetailLink)`
-  color: ${color("text-medium")};
+  color: var(--mb-color-text-medium);
   visibility: hidden;
 `;
 
@@ -128,7 +127,7 @@ export const SortingControlContainer = styled.div<{
 }>`
   display: flex;
   align-items: center;
-  color: ${props => (props.isActive ? color("text-dark") : "")};
+  color: ${({ isActive }) => isActive && "var(--mb-color-text-dark)"};
   ${props => (props.isSortable ? `cursor: pointer; user-select: none;` : "")}
 
   .Icon {
@@ -136,7 +135,7 @@ export const SortingControlContainer = styled.div<{
   }
 
   &:hover {
-    color: ${color("text-dark")};
+    color: var(--mb-color-text-dark);
 
     .Icon {
       visibility: visible;
@@ -156,7 +155,7 @@ export const RowActionsContainer = styled.div`
 
 export const TableItemSecondaryField = styled.span`
   font-size: 0.95em;
-  color: ${color("text-medium")};
+  color: var(--mb-color-text-medium);
 `;
 
 export const TBody = styled.tbody`
@@ -164,14 +163,14 @@ export const TBody = styled.tbody`
     border: none;
     background-color: transparent;
 
-    border-top: 1px solid ${color("border")};
+    border-top: 1px solid var(--mb-color-border);
 
     &:first-of-type {
-      border-inline-start: 1px solid ${color("border")};
+      border-inline-start: 1px solid var(--mb-color-border);
     }
 
     &:last-child {
-      border-inline-end: 1px solid ${color("border")};
+      border-inline-end: 1px solid var(--mb-color-border);
     }
   }
 
@@ -181,7 +180,7 @@ export const TBody = styled.tbody`
 
   tr:last-child {
     td {
-      border-bottom: 1px solid ${color("border")};
+      border-bottom: 1px solid var(--mb-color-border);
 
       &:last-child {
         border-end-end-radius: 8px;

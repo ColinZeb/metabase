@@ -2,8 +2,11 @@ import { assoc } from "icepick";
 import { t } from "ttag";
 import _ from "underscore";
 
-import { autoWireDashcardsWithMatchingParameters } from "metabase/dashboard/actions/auto-wire-parameters/actions";
-import { closeAutoWireParameterToast } from "metabase/dashboard/actions/auto-wire-parameters/toasts";
+import { showAutoWireToast } from "metabase/dashboard/actions/auto-wire-parameters/actions";
+import {
+  closeAutoWireParameterToast,
+  closeAddCardAutoWireToasts,
+} from "metabase/dashboard/actions/auto-wire-parameters/toasts";
 import { getParameterMappings } from "metabase/dashboard/actions/auto-wire-parameters/utils";
 import { updateDashboard } from "metabase/dashboard/actions/save";
 import { SIDEBAR_NAME } from "metabase/dashboard/constants";
@@ -15,6 +18,7 @@ import {
 } from "metabase/parameters/utils/dashboards";
 import { getParameterValuesByIdFromQueryParams } from "metabase/parameters/utils/parameter-values";
 import { addUndo, dismissUndo } from "metabase/redux/undo";
+import { buildTemporalUnitOption } from "metabase-lib/v1/parameters/utils/operators";
 import {
   isParameterValueEmpty,
   PULSE_PARAM_EMPTY,
@@ -27,7 +31,6 @@ import type {
   ParameterId,
   ParameterMappingOptions,
   ParameterTarget,
-  QuestionDashboardCard,
   ValuesQueryType,
   ValuesSourceConfig,
   ValuesSourceType,
@@ -51,6 +54,7 @@ import {
   getParameters,
   getParameterValues,
   getParameterMappingsBeforeEditing,
+  getSelectedTabId,
 } from "../selectors";
 import { isQuestionDashCard } from "../utils";
 
@@ -140,10 +144,21 @@ export const addParameter = createThunkAction(
   },
 );
 
+export const ADD_TEMPORAL_UNIT_PARAMETER =
+  "metabase/dashboard/ADD_TEMPORAL_UNIT_PARAMETER";
+export const addTemporalUnitParameter = createThunkAction(
+  ADD_TEMPORAL_UNIT_PARAMETER,
+  () => async dispatch => {
+    await dispatch(addParameter(buildTemporalUnitOption()));
+  },
+);
+
 export const REMOVE_PARAMETER = "metabase/dashboard/REMOVE_PARAMETER";
 export const removeParameter = createThunkAction(
   REMOVE_PARAMETER,
   (parameterId: ParameterId) => (dispatch, getState) => {
+    dispatch(closeAddCardAutoWireToasts());
+
     updateParameters(dispatch, getState, parameters =>
       parameters.filter(p => p.id !== parameterId),
     );
@@ -168,12 +183,10 @@ export const setParameterMapping = createThunkAction(
       const dashcard = getDashCardById(getState(), dashcardId);
 
       if (target !== null && isQuestionDashCard(dashcard)) {
+        const selectedTabId = getSelectedTabId(getState());
+
         dispatch(
-          autoWireDashcardsWithMatchingParameters(
-            parameterId,
-            dashcard,
-            target,
-          ),
+          showAutoWireToast(parameterId, dashcard, target, selectedTabId),
         );
       }
 
@@ -182,8 +195,7 @@ export const setParameterMapping = createThunkAction(
           id: dashcardId,
           attributes: {
             parameter_mappings: getParameterMappings(
-              // TODO remove type casting when getParameterMappings is fixed
-              dashcard as QuestionDashboardCard,
+              dashcard,
               parameterId,
               cardId,
               target,
