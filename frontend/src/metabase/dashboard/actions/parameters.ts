@@ -31,6 +31,7 @@ import type {
   ParameterId,
   ParameterMappingOptions,
   ParameterTarget,
+  TemporalUnit,
   ValuesQueryType,
   ValuesSourceConfig,
   ValuesSourceType,
@@ -487,6 +488,25 @@ export const setParameterIsMultiSelect = createThunkAction(
   },
 );
 
+export const SET_PARAMETER_TEMPORAL_UNITS =
+  "metabase/dashboard/SET_PARAMETER_TEMPORAL_UNITS";
+export const setParameterTemporalUnits = createThunkAction(
+  SET_PARAMETER_TEMPORAL_UNITS,
+  (parameterId: ParameterId, temporalUnits: TemporalUnit[]) =>
+    (dispatch, getState) => {
+      updateParameter(dispatch, getState, parameterId, parameter => ({
+        ...parameter,
+        temporal_units: temporalUnits,
+        default:
+          parameter.default && temporalUnits.includes(parameter.default)
+            ? parameter.default
+            : undefined,
+      }));
+
+      return { id: parameterId, temporalUnits };
+    },
+);
+
 export const SET_PARAMETER_QUERY_TYPE =
   "metabase/dashboard/SET_PARAMETER_QUERY_TYPE";
 export const setParameterQueryType = createThunkAction(
@@ -644,7 +664,7 @@ export const closeAutoApplyFiltersToast = createThunkAction(
   () => (dispatch, getState) => {
     const toastId = getAutoApplyFiltersToastId(getState());
     if (toastId) {
-      dispatch(dismissUndo(toastId, false));
+      dispatch(dismissUndo({ undoId: toastId, track: false }));
     }
   },
 );

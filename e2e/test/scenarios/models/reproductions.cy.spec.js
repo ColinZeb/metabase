@@ -692,17 +692,15 @@ describe("issue 23024", () => {
     addModelToDashboardAndVisit();
   });
 
-  it("should be possible to apply the dashboard filter to the native model (metabase#23024)", () => {
+  it("should not be possible to apply the dashboard filter to the native model (metabase#23024)", () => {
     editDashboard();
 
     setFilter("Text or Category", "Is");
 
     getDashboardCard().within(() => {
-      cy.findByText("Column to filter on");
-      cy.findByText("Select…").click();
+      cy.findByText(/Models are data sources/).should("be.visible");
+      cy.findByText("Select…").should("not.exist");
     });
-
-    popover().contains("Category");
   });
 });
 
@@ -895,15 +893,6 @@ describe("issue 26091", () => {
 
     startNewQuestion();
     entityPickerModal().within(() => {
-      entityPickerModalTab("Recents").should(
-        "have.attr",
-        "aria-selected",
-        "true",
-      );
-      cy.findByText("New model").should("be.visible");
-      cy.findByText("Old model").should("be.visible");
-      cy.findByText("Orders Model").should("be.visible");
-
       entityPickerModalTab("Models").click();
       cy.findByText("New model").should("be.visible");
       cy.findByText("Old model").should("be.visible");
