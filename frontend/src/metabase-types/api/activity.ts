@@ -1,5 +1,5 @@
-import type { CardDisplayType } from "./card";
 import type { DatabaseId, InitialSyncStatus } from "./database";
+import type { CardDisplayType } from "./visualization";
 
 export const ACTIVITY_MODELS = [
   "table",
@@ -10,7 +10,7 @@ export const ACTIVITY_MODELS = [
   "collection",
 ] as const;
 
-export type ActivityModel = typeof ACTIVITY_MODELS[number];
+export type ActivityModel = (typeof ACTIVITY_MODELS)[number];
 
 export const isActivityModel = (model: string): model is ActivityModel =>
   (ACTIVITY_MODELS as unknown as string[]).includes(model);
@@ -33,6 +33,7 @@ export interface BaseRecentItem {
 export interface RecentTableItem extends BaseRecentItem {
   model: "table";
   display_name: string;
+  table_schema: string;
   database: {
     id: number;
     name: string;
@@ -55,6 +56,9 @@ export interface RecentCollectionItem extends BaseRecentItem {
 }
 
 export type RecentItem = RecentTableItem | RecentCollectionItem;
+
+export const isRecentTableItem = (item: RecentItem): item is RecentTableItem =>
+  item.model === "table";
 
 export interface RecentItemsResponse {
   recent_views: RecentItem[];

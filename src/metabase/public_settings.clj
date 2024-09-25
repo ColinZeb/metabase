@@ -70,12 +70,62 @@
   :audit   :getter
   :default true)
 
+(defsetting site-uuid
+  ;; Don't i18n this docstring because it's not user-facing! :)
+  "Unique identifier used for this instance of {0}. This is set once and only once the first time it is fetched via
+  its magic getter. Nice!"
+  :visibility :authenticated
+  :base       setting/uuid-nonce-base
+  :doc        false)
+
+(defsetting upgrade-threshold
+  (deferred-tru "Threshold (value in 0-100) indicating at which treshold it should offer an upgrade to the latest major version.")
+  :visibility :internal
+  :export?    false
+  :type       :integer
+  :setter     :none
+  :getter     (fn []
+                ;; site-uuid is stable, current-major lets the threshold randomize during each major revision. So they
+                ;; might be early one release, and then later the next.
+                (-> (site-uuid) (str "-" (config/current-major-version)) hash (mod 100))))
+
+(defn- prevent-upgrade?
+  "On a major upgrade, we check the rollout threshold to indicate whether we should remove the latest release from the
+  version info. This lets us stage upgrade notifications to self-hosted instances in a controlled manner. Defaults to
+  show the upgrade except under certain circumstances."
+  [current-major latest threshold]
+  (when (and (integer? current-major) (integer? threshold) (string? (:version latest)))
+    (try (let [upgrade-major (-> latest :version config/major-version)
+               rollout       (some-> latest :rollout)]
+           (when (and upgrade-major rollout)
+             (cond
+               ;; it's the same or a minor release
+               (= upgrade-major current-major) false
+               ;; the rollout threshold is larger than our threshold
+               (>= rollout threshold) false
+               :else true)))
+         (catch Exception _e true))))
+
+(defn- version-info*
+  [raw-version-info {:keys [current-major upgrade-threshold-value]}]
+  (try
+    (cond-> raw-version-info
+      (prevent-upgrade? current-major (-> raw-version-info :latest) upgrade-threshold-value)
+      (dissoc :latest))
+    (catch Exception e
+      (log/error e "Error processing version info")
+      raw-version-info)))
+
 (defsetting version-info
   (deferred-tru "Information about available versions of Metabase.")
   :type    :json
   :audit   :never
   :default {}
-  :doc     false)
+  :doc     false
+  :getter  (fn []
+             (let [raw-vi (setting/get-value-of-type :json :version-info)
+                   current-major (config/current-major-version)]
+               (version-info* raw-vi {:current-major current-major :upgrade-threshold-value (upgrade-threshold)}))))
 
 (defsetting version-info-last-checked
   (deferred-tru "Indicates when Metabase last checked for new versions.")
@@ -113,14 +163,6 @@
   :type       :integer
   :visibility :public
   :audit      :getter)
-
-(defsetting site-uuid
-  ;; Don't i18n this docstring because it's not user-facing! :)
-  "Unique identifier used for this instance of {0}. This is set once and only once the first time it is fetched via
-  its magic getter. Nice!"
-  :visibility :authenticated
-  :base       setting/uuid-nonce-base
-  :doc        false)
 
 (defsetting site-uuid-for-premium-features-token-checks
   "In the interest of respecting everyone's privacy and keeping things as anonymous as possible we have a *different*
@@ -192,6 +234,7 @@
   :visibility :public
   :export?    true
   :audit      :getter
+  :encryption :never
   :getter     (fn []
                 (let [value (setting/get-value-of-type :string :site-locale)]
                   (when (i18n/available-locale? value)
@@ -212,7 +255,6 @@
                 (application-name-for-setting-descriptions))
   :type       :boolean
   :default    true
-  :encryption :never
   :visibility :public
   :audit      :getter)
 
@@ -744,8 +786,10 @@ See [fonts](../configuring-metabase/fonts.md).")
                       :email_allow_list               (premium-features/enable-email-allow-list?)
                       :email_restrict_recipients      (premium-features/enable-email-restrict-recipients?)
                       :embedding                      (premium-features/hide-embed-branding?)
+                      :embedding_sdk                  (premium-features/enable-embedding-sdk-origins?)
                       :hosting                        (premium-features/is-hosted?)
                       :official_collections           (premium-features/enable-official-collections?)
+                      :query_reference_validation     (premium-features/enable-query-reference-validation?)
                       :sandboxes                      (premium-features/enable-sandboxes?)
                       :scim                           (premium-features/enable-scim?)
                       :session_timeout_config         (premium-features/enable-session-timeout-config?)
@@ -827,54 +871,6 @@ See [fonts](../configuring-metabase/fonts.md).")
   []
   (nil? @api/*current-user*))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Deprecated uploads settings begin
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; These settings were removed in 50.0 and will be erased from the code in 53.0. They have been left here to explain how
-;; to migrate to the new way to set uploads settings.
-
-(defsetting uploads-enabled
-  (deferred-tru "Whether or not uploads are enabled")
-  :deprecated "0.50.0"
-  :visibility :internal
-  :export?    false
-  :type       :boolean
-  :default    false
-  :getter     (fn [] (throw (Exception. "uploads-enabled has been removed; use 'uploads_enabled' on the database instead")))
-  :setter     (fn [_] (log/warn "'uploads-enabled' has been removed; use 'uploads_enabled' on the database instead")))
-
-(defsetting uploads-database-id
-  (deferred-tru "Database ID for uploads")
-  :deprecated "0.50.0"
-  :visibility :internal
-  :export?    false
-  :type       :integer
-  :getter     (fn [] (throw (Exception. "uploads-database-id has been removed; use 'uploads_enabled' on the database instead")))
-  :setter     (fn [_] (log/warn "'uploads-database-id' has been removed; use 'uploads_enabled' on the database instead")))
-
-(defsetting uploads-schema-name
-  (deferred-tru "Schema name for uploads")
-  :deprecated "0.50.0"
-  :visibility :internal
-  :export?    false
-  :type       :string
-  :getter     (fn [] (throw (Exception. "uploads-schema-name has been removed; use 'uploads_schema_name' on the database instead")))
-  :setter     (fn [_] (log/warn "'uploads-schema-name' has been removed; use 'uploads_schema_name' on the database instead")))
-
-(defsetting uploads-table-prefix
-  (deferred-tru "Prefix for upload table names")
-  :deprecated "0.50.0"
-  :visibility :internal
-  :export?    false
-  :type       :string
-  :getter     (fn [] (throw (Exception. "uploads-table-prefix has been removed; use 'uploads_table_prefix' on the database instead")))
-  :setter     (fn [_] (log/warn "'uploads-table-prefix' has been removed; use 'uploads_table_prefix' on the database instead")))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Deprecated uploads settings end
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (defsetting uploads-settings
   (deferred-tru "Upload settings")
   :visibility :authenticated
@@ -888,8 +884,6 @@ See [fonts](../configuring-metabase/fonts.md).")
                    :table_prefix (:uploads_table_prefix db)}))
   :setter     (fn [{:keys [db_id schema_name table_prefix]}]
                 (cond
-                  (premium-features/has-feature? :attached-dwh)
-                  (api/throw-403)
                   (nil? db_id)
                   (t2/update! :model/Database :uploads_enabled true {:uploads_enabled      false
                                                                      :uploads_schema_name  nil
@@ -948,3 +942,58 @@ See [fonts](../configuring-metabase/fonts.md).")
   :visibility :internal
   :export?    true
   :type       :integer)
+
+(defsetting experimental-fulltext-search-enabled
+  (deferred-tru "Enables search engines which are still in the experimental stage")
+  :visibility :internal
+  :export?    false
+  :default    false
+  :type       :boolean)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Deprecated uploads settings begin
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; These settings were removed in 50.0 and will be erased from the code in 53.0. They have been left here to explain how
+;; to migrate to the new way to set uploads settings.
+
+(defsetting uploads-enabled
+  (deferred-tru "Whether or not uploads are enabled")
+  :deprecated "0.50.0"
+  :visibility :internal
+  :export?    false
+  :type       :boolean
+  :default    false
+  :getter     (fn [] (throw (Exception. "uploads-enabled has been removed; use 'uploads_enabled' on the database instead")))
+  :setter     (fn [_] (log/warn "'uploads-enabled' has been removed; use 'uploads_enabled' on the database instead")))
+
+(defsetting uploads-database-id
+  (deferred-tru "Database ID for uploads")
+  :deprecated "0.50.0"
+  :visibility :internal
+  :export?    false
+  :type       :integer
+  :getter     (fn [] (throw (Exception. "uploads-database-id has been removed; use 'uploads_enabled' on the database instead")))
+  :setter     (fn [_] (log/warn "'uploads-database-id' has been removed; use 'uploads_enabled' on the database instead")))
+
+(defsetting uploads-schema-name
+  (deferred-tru "Schema name for uploads")
+  :deprecated "0.50.0"
+  :visibility :internal
+  :export?    false
+  :type       :string
+  :getter     (fn [] (throw (Exception. "uploads-schema-name has been removed; use 'uploads_schema_name' on the database instead")))
+  :setter     (fn [_] (log/warn "'uploads-schema-name' has been removed; use 'uploads_schema_name' on the database instead")))
+
+(defsetting uploads-table-prefix
+  (deferred-tru "Prefix for upload table names")
+  :deprecated "0.50.0"
+  :visibility :internal
+  :export?    false
+  :type       :string
+  :getter     (fn [] (throw (Exception. "uploads-table-prefix has been removed; use 'uploads_table_prefix' on the database instead")))
+  :setter     (fn [_] (log/warn "'uploads-table-prefix' has been removed; use 'uploads_table_prefix' on the database instead")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Deprecated uploads settings end
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

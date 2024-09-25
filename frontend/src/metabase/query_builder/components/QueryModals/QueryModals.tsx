@@ -20,7 +20,7 @@ import { PreviewQueryModal } from "metabase/query_builder/components/view/Previe
 import type { QueryModalType } from "metabase/query_builder/constants";
 import { MODAL_TYPES } from "metabase/query_builder/constants";
 import { getQuestionWithParameters } from "metabase/query_builder/selectors";
-import { FilterModal } from "metabase/querying/filters";
+import { FilterModal } from "metabase/querying/filters/components/FilterModal";
 import QuestionMoveToast from "metabase/questions/components/QuestionMoveToast";
 import ArchiveQuestionModal from "metabase/questions/containers/ArchiveQuestionModal";
 import EditEventModal from "metabase/timelines/questions/containers/EditEventModal";
@@ -140,7 +140,8 @@ export function QueryModals({
           initialCollectionId={initialCollectionId}
           onSave={handleSaveAndClose}
           onCreate={handleSaveModalCreate}
-          onCancel={onCloseModal}
+          onClose={onCloseModal}
+          opened={true}
         />
       );
     case MODAL_TYPES.SAVED:
@@ -168,7 +169,8 @@ export function QueryModals({
             await onCreate(question);
             onOpenModal(MODAL_TYPES.ADD_TO_DASHBOARD);
           }}
-          onCancel={onCloseModal}
+          onClose={onCloseModal}
+          opened={true}
           multiStep
         />
       );
@@ -202,7 +204,8 @@ export function QueryModals({
             await onCreate(question);
             showAlertsAfterQuestionSaved();
           }}
-          onCancel={onCloseModal}
+          onClose={onCloseModal}
+          opened={true}
           multiStep
           initialCollectionId={initialCollectionId}
         />
@@ -214,7 +217,8 @@ export function QueryModals({
           originalQuestion={originalQuestion}
           onSave={handleSaveAndClose}
           onCreate={handleCreateAndClose}
-          onCancel={onCloseModal}
+          onClose={onCloseModal}
+          opened={true}
           multiStep
           initialCollectionId={initialCollectionId}
         />

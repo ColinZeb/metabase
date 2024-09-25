@@ -10,7 +10,11 @@ import _ from "underscore";
 import type { AnySchema } from "yup";
 
 import noResultsSource from "assets/img/no_results.svg";
-import { strategies } from "metabase/admin/performance/constants/complex";
+import {
+  getPerformanceTabMetadata,
+  strategies,
+} from "metabase/admin/performance/constants/complex";
+import type { ModelWithClearableCache } from "metabase/admin/performance/types";
 import { UNABLE_TO_CHANGE_ADMIN_PERMISSIONS } from "metabase/admin/permissions/constants/messages";
 import {
   type DataPermission,
@@ -23,6 +27,8 @@ import type { ADMIN_SETTINGS_SECTIONS } from "metabase/admin/settings/selectors"
 import type {
   ActualModelFilters,
   AvailableModelFilters,
+  MetricFilterControlsProps,
+  MetricFilterSettings,
   ModelFilterControlsProps,
 } from "metabase/browse/utils";
 import { getIconBase } from "metabase/lib/icon";
@@ -46,6 +52,7 @@ import type {
   Group,
   GroupPermissions,
   GroupsPermissions,
+  ModelCacheRefreshStatus,
   Revision,
   SearchResult,
   User,
@@ -81,6 +88,11 @@ export const PLUGIN_ADMIN_TOOLS = {
   INDEX_ROUTE: "model-caching",
   EXTRA_ROUTES_INFO: [],
   EXTRA_ROUTES: [],
+};
+
+export const PLUGIN_ADMIN_TROUBLESHOOTING = {
+  EXTRA_ROUTES: [] as ReactNode[],
+  GET_EXTRA_NAV: (): ReactNode[] => [],
 };
 
 // functions that update the sections
@@ -355,6 +367,7 @@ export const PLUGIN_MODERATION = {
   QuestionModerationSection: PluginPlaceholder,
   QuestionModerationButton: PluginPlaceholder,
   ModerationReviewBanner: PluginPlaceholder,
+  ModerationReviewText: PluginPlaceholder,
   ModerationStatusIcon: PluginPlaceholder,
   getQuestionIcon: PluginPlaceholder,
   getStatusIcon: (_moderated_status?: string): string | IconProps | undefined =>
@@ -364,7 +377,7 @@ export const PLUGIN_MODERATION = {
     _usersById: Record<string, UserListResult>,
     _currentUser: User | null,
   ) => [] as RevisionOrModerationEvent[],
-  getMenuItems: (
+  useMenuItems: (
     _question?: Question,
     _isModerator?: boolean,
     _reload?: () => void,
@@ -373,7 +386,8 @@ export const PLUGIN_MODERATION = {
 
 export type InvalidateNowButtonProps = {
   targetId: number;
-  targetModel: CacheableModel;
+  /** The type of object that the target is */
+  targetModel: ModelWithClearableCache;
   targetName: string;
 };
 
@@ -386,23 +400,27 @@ export type SidebarCacheSectionProps = {
 export type SidebarCacheFormProps = {
   item: CacheableDashboard | Question;
   model: CacheableModel;
-  setPage: (page: "default" | "caching") => void;
+  onClose: () => void;
 } & GroupProps;
 
 export const PLUGIN_CACHING = {
   isGranularCachingEnabled: () => false,
   StrategyFormLauncherPanel: PluginPlaceholder as any,
   GranularControlsExplanation: PluginPlaceholder as any,
-  DashboardStrategySidebar: PluginPlaceholder as any,
   SidebarCacheSection:
     PluginPlaceholder as ComponentType<SidebarCacheSectionProps>,
-  SidebarCacheForm: PluginPlaceholder as ComponentType<SidebarCacheFormProps>,
+  SidebarCacheForm: PluginPlaceholder as ComponentType<
+    SidebarCacheFormProps & { onBack: () => void }
+  >,
   InvalidateNowButton:
     PluginPlaceholder as ComponentType<InvalidateNowButtonProps>,
   hasQuestionCacheSection: (_question: Question) => false,
   canOverrideRootStrategy: false,
   /** Metadata describing the different kinds of strategies */
   strategies: strategies,
+  DashboardAndQuestionCachingTab: PluginPlaceholder as any,
+  StrategyEditorForQuestionsAndDashboards: PluginPlaceholder as any,
+  getTabMetadata: getPerformanceTabMetadata,
 };
 
 export const PLUGIN_REDUCERS: {
@@ -473,8 +491,13 @@ export const PLUGIN_GROUP_MANAGERS: PluginGroupManagersType = {
 
 export const PLUGIN_MODEL_PERSISTENCE = {
   isModelLevelPersistenceEnabled: () => false,
-  ModelCacheControl: PluginPlaceholder as any,
-  getMenuItems: (_question?: any, _onChange?: any) => ({}),
+  ModelCacheToggle: PluginPlaceholder as ({
+    persistedModel,
+    model,
+  }: {
+    persistedModel?: ModelCacheRefreshStatus;
+    model: Question;
+  }) => JSX.Element,
 };
 
 export const PLUGIN_EMBEDDING = {
@@ -496,6 +519,12 @@ export const PLUGIN_CONTENT_VERIFICATION = {
       ActualModelFilters,
       Dispatch<SetStateAction<ActualModelFilters>>,
     ],
+
+  contentVerificationEnabled: false,
+  getDefaultMetricFilters: (_state: State): MetricFilterSettings => ({
+    verified: false,
+  }),
+  MetricFilterControls: (_props: MetricFilterControlsProps) => null,
 };
 
 export const PLUGIN_DASHBOARD_HEADER = {

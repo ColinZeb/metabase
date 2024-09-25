@@ -1,40 +1,20 @@
-import { createMockCollection } from "metabase-types/api/mocks";
+import {
+  createMockCollection,
+  createMockColumn,
+  createMockDataset,
+  createMockDatasetData,
+} from "metabase-types/api/mocks";
 import { SortDirection } from "metabase-types/api/sorting";
 
 import { createMockModelResult } from "../test-utils";
 import type { ModelResult } from "../types";
 
 import {
-  getCollectionPathString,
+  getDatasetValueForMetric,
   getMaxRecentModelCount,
-  sortModels,
+  isDatasetScalar,
+  sortModelOrMetric,
 } from "./utils";
-
-describe("getCollectionPathString", () => {
-  it("should return path for collection without ancestors", () => {
-    const collection = createMockCollection({
-      id: 0,
-      name: "Documents",
-      effective_ancestors: [],
-    });
-    const pathString = getCollectionPathString(collection);
-    expect(pathString).toBe("Documents");
-  });
-
-  it("should return path for collection with multiple ancestors", () => {
-    const ancestors = [
-      createMockCollection({ name: "Home" }),
-      createMockCollection({ name: "User" }),
-      createMockCollection({ name: "Files" }),
-    ];
-    const collection = createMockCollection({
-      name: "Documents",
-      effective_ancestors: ancestors,
-    });
-    const pathString = getCollectionPathString(collection);
-    expect(pathString).toBe("Home / User / Files / Documents");
-  });
-});
 
 describe("sortModels", () => {
   let id = 0;
@@ -74,7 +54,7 @@ describe("sortModels", () => {
       sort_column: "name",
       sort_direction: SortDirection.Asc,
     } as const;
-    const sorted = sortModels(mockSearchResults, sortingOptions);
+    const sorted = sortModelOrMetric(mockSearchResults, sortingOptions);
     expect(sorted?.map(model => model.name)).toEqual(["A", "B", "C"]);
   });
 
@@ -83,7 +63,7 @@ describe("sortModels", () => {
       sort_column: "name",
       sort_direction: SortDirection.Desc,
     } as const;
-    const sorted = sortModels(mockSearchResults, sortingOptions);
+    const sorted = sortModelOrMetric(mockSearchResults, sortingOptions);
     expect(sorted?.map(model => model.name)).toEqual(["C", "B", "A"]);
   });
 
@@ -92,7 +72,7 @@ describe("sortModels", () => {
       sort_column: "collection",
       sort_direction: SortDirection.Asc,
     } as const;
-    const sorted = sortModels(mockSearchResults, sortingOptions);
+    const sorted = sortModelOrMetric(mockSearchResults, sortingOptions);
     expect(sorted?.map(model => model.name)).toEqual(["B", "A", "C"]);
   });
 
@@ -101,7 +81,7 @@ describe("sortModels", () => {
       sort_column: "collection",
       sort_direction: SortDirection.Desc,
     } as const;
-    const sorted = sortModels(mockSearchResults, sortingOptions);
+    const sorted = sortModelOrMetric(mockSearchResults, sortingOptions);
     expect(sorted?.map(model => model.name)).toEqual(["C", "A", "B"]);
   });
 
@@ -128,7 +108,7 @@ describe("sortModels", () => {
         sort_column: "collection",
         sort_direction: SortDirection.Asc,
       } as const;
-      const sorted = sortModels(mockSearchResults, sortingOptions);
+      const sorted = sortModelOrMetric(mockSearchResults, sortingOptions);
       expect(sorted).toEqual([
         modelMap["model named B, with collection path D / E / F"],
         modelMap["model named Bz, with collection path D / E / F"],
@@ -143,7 +123,7 @@ describe("sortModels", () => {
         sort_column: "collection",
         sort_direction: SortDirection.Desc,
       } as const;
-      const sorted = sortModels(mockSearchResults, sortingOptions);
+      const sorted = sortModelOrMetric(mockSearchResults, sortingOptions);
       expect(sorted).toEqual([
         modelMap["model named C, with collection path Z"],
         modelMap["model named C, with collection path Y"],
@@ -195,7 +175,7 @@ describe("sortModels", () => {
 
       // When sorting in Swedish, z comes before ä
       const swedishLocaleCode = "sv";
-      const sorted = sortModels(
+      const sorted = sortModelOrMetric(
         swedishResults,
         sortingOptions,
         swedishLocaleCode,
@@ -227,5 +207,155 @@ describe("getMaxRecentModelCount", () => {
     expect(getMaxRecentModelCount(0)).toBe(0);
     expect(getMaxRecentModelCount(5)).toBe(0);
     expect(getMaxRecentModelCount(9)).toBe(0);
+  });
+});
+
+describe("isDatasetScalar", () => {
+  it("should return true for a dataset with a single column and a single row", () => {
+    const dataset = createMockDataset({
+      data: createMockDatasetData({
+        cols: [createMockColumn({ name: "col1" })],
+        rows: [[1]],
+      }),
+    });
+
+    expect(isDatasetScalar(dataset)).toBe(true);
+  });
+
+  it("should return false for a dataset with more than one column", () => {
+    const dataset = createMockDataset({
+      data: createMockDatasetData({
+        cols: [
+          createMockColumn({ name: "col1" }),
+          createMockColumn({ name: "col2" }),
+        ],
+        rows: [[1, 2]],
+      }),
+    });
+
+    expect(isDatasetScalar(dataset)).toBe(false);
+  });
+
+  it("should return false for a dataset with more than one row", () => {
+    const dataset = createMockDataset({
+      data: createMockDatasetData({
+        cols: [createMockColumn({ name: "col1" })],
+        rows: [[1], [2]],
+      }),
+    });
+
+    expect(isDatasetScalar(dataset)).toBe(false);
+  });
+
+  it("should return false for a dataset with errors", () => {
+    const dataset = createMockDataset({
+      error: "error",
+      data: createMockDatasetData({
+        cols: [createMockColumn({ name: "col1" })],
+        rows: [[1]],
+      }),
+    });
+
+    expect(isDatasetScalar(dataset)).toBe(false);
+  });
+});
+
+describe("getDatasetValueForMetric", () => {
+  describe("scalar metric", () => {
+    it("should return null if the dataset is not scalar", () => {
+      const dataset = createMockDataset({
+        data: createMockDatasetData({
+          cols: [createMockColumn({ name: "col1" })],
+          rows: [[1], [2]],
+        }),
+      });
+      expect(getDatasetValueForMetric(dataset)).toBe(null);
+    });
+
+    it("should return null for a scalar dataset with errors", () => {
+      const dataset = createMockDataset({
+        error: "error",
+        data: createMockDatasetData({
+          cols: [createMockColumn({ name: "col1" })],
+          rows: [[1]],
+        }),
+      });
+
+      expect(getDatasetValueForMetric(dataset)).toBe(null);
+    });
+
+    it("should return the value if the dataset is scalar", () => {
+      const value = 42;
+      const column = createMockColumn({ name: "col1" });
+      const dataset = createMockDataset({
+        data: createMockDatasetData({
+          cols: [column],
+          rows: [[value]],
+        }),
+      });
+      expect(getDatasetValueForMetric(dataset)).toEqual({
+        value: "42",
+        label: "Overall",
+      });
+    });
+
+    it("should return null for a scalar dataset with no value", () => {
+      const dataset = createMockDataset({
+        data: createMockDatasetData({
+          cols: [createMockColumn({ name: "col2" })],
+          rows: [],
+        }),
+      });
+
+      expect(getDatasetValueForMetric(dataset)).toEqual(null);
+    });
+  });
+
+  describe("temporal metric", () => {
+    it("should return null for a timeseries dataset with errors", () => {
+      const dataset = createMockDataset({
+        error: "error",
+        data: createMockDatasetData({
+          cols: [
+            createMockColumn({ name: "col1", base_type: "type/DateTime" }),
+            createMockColumn({ name: "col2" }),
+          ],
+          rows: [["2024-01-01T00:00:00.000Z", 1]],
+        }),
+      });
+
+      expect(getDatasetValueForMetric(dataset)).toBe(null);
+    });
+
+    it("should return the last row value a timeseries dataset", () => {
+      const dataset = createMockDataset({
+        data: createMockDatasetData({
+          cols: [
+            createMockColumn({ name: "col1", base_type: "type/DateTime" }),
+            createMockColumn({ name: "col2" }),
+          ],
+          rows: [["2024-01-01T00:00:00.000Z", 1]],
+        }),
+      });
+
+      expect(getDatasetValueForMetric(dataset)).toEqual({
+        value: "1",
+        label: "January 1, 2024, 12:00 AM",
+      });
+    });
+
+    it("should return null for a temporal dataset with no value", () => {
+      const dataset = createMockDataset({
+        data: createMockDatasetData({
+          cols: [
+            createMockColumn({ name: "col1", base_type: "type/DateTime" }),
+            createMockColumn({ name: "col2" }),
+          ],
+          rows: [],
+        }),
+      });
+
+      expect(getDatasetValueForMetric(dataset)).toEqual(null);
+    });
   });
 });

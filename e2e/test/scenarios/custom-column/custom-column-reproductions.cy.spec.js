@@ -5,6 +5,7 @@ import {
   addOrUpdateDashboardCard,
   cartesianChartCircle,
   createNativeQuestion,
+  createSegment,
   editDashboard,
   enterCustomColumnDetails,
   entityPickerModal,
@@ -36,7 +37,6 @@ import {
   visualize,
   withDatabase,
 } from "e2e/support/helpers";
-import { createSegment } from "e2e/support/helpers/e2e-table-metadata-helpers";
 
 const { PRODUCTS, PRODUCTS_ID, ORDERS, ORDERS_ID, REVIEWS, REVIEWS_ID } =
   SAMPLE_DATABASE;
@@ -318,8 +318,7 @@ describe("issue 18747", () => {
   function addValueToParameterFilter() {
     filterWidget().click();
     popover().within(() => {
-      cy.findByRole("textbox").type("14");
-      cy.findByText("14").click();
+      cy.findByRole("searchbox").type("14");
       cy.button("Add filter").click();
     });
   }

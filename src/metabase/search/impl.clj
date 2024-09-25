@@ -1,6 +1,7 @@
 (ns metabase.search.impl
   (:require
    [cheshire.core :as json]
+   [clojure.string :as str]
    [honey.sql.helpers :as sql.helpers]
    [medley.core :as m]
    [metabase.db :as mdb]
@@ -14,6 +15,7 @@
    [metabase.models.interface :as mi]
    [metabase.models.permissions :as perms]
    [metabase.permissions.util :as perms.u]
+   [metabase.public-settings :as public-settings]
    [metabase.public-settings.premium-features :as premium-features]
    [metabase.search.config
     :as search.config
@@ -95,7 +97,7 @@
 (mu/defn- base-query-for-model :- [:map {:closed true}
                                    [:select :any]
                                    [:from :any]
-                                   [:where :any]
+                                   [:where {:optional true} :any]
                                    [:join {:optional true} :any]
                                    [:left-join {:optional true} :any]]
   "Create a HoneySQL query map with `:select`, `:from`, and `:where` clauses for `model`, suitable for the `UNION ALL`
@@ -110,22 +112,22 @@
   so we can return its `:name`."
   [honeysql-query                                :- ms/Map
    model                                         :- :string
-   {:keys [current-user-perms
-           filter-items-in-personal-collection
-           archived]} :- SearchContext]
-  (let [visible-collections      (collection/permissions-set->visible-collection-ids
-                                  current-user-perms
+   {:keys [filter-items-in-personal-collection
+           archived
+           current-user-id
+           is-superuser?]} :- SearchContext]
+  (let [collection-id-col        (if (= model "collection")
+                                   :collection.id
+                                   :collection_id)
+        collection-filter-clause (collection/visible-collection-filter-clause
+                                  collection-id-col
                                   {:include-archived-items :all
                                    :include-trash-collection? true
                                    :permission-level (if archived
                                                        :write
-                                                       :read)})
-        collection-id-col        (if (= model "collection")
-                                   :collection.id
-                                   :collection_id)
-        collection-filter-clause (collection/visible-collection-ids->honeysql-filter-clause
-                                  collection-id-col
-                                  visible-collections)]
+                                                       :read)}
+                                  {:current-user-id current-user-id
+                                   :is-superuser?   is-superuser?})]
     (cond-> honeysql-query
       true
       (sql.helpers/where collection-filter-clause (perms/audit-namespace-clause :collection.namespace nil))
@@ -242,8 +244,7 @@
                              [:= :model.id :action.model_id])
       (sql.helpers/left-join :query_action
                              [:= :query_action.action_id :action.id])
-      (add-collection-join-and-where-clauses model
-                                             search-ctx)))
+      (add-collection-join-and-where-clauses model search-ctx)))
 
 (defmethod search-query-for-model "card"
   [_model search-ctx]
@@ -285,37 +286,23 @@
       (with-last-editing-info "dashboard")))
 
 (defn- add-model-index-permissions-clause
-  [query current-user-perms]
-  (let [build-path (fn [x y z] (h2x/concat (h2x/literal x) y (h2x/literal z)))
-        has-perm-clause (fn [x y z] [:in (build-path x y z) current-user-perms])]
-    (if (contains? current-user-perms "/")
-      query
-      ;; User has /collection/:id/ or /collection/:id/read/ for the collection the model is in. We will check
-      ;; permissions on the database after the query is complete, in `check-permissions-for-model`
-      (let [has-root-access?
-            (or (contains? current-user-perms "/collection/root/")
-                (contains? current-user-perms "/collection/root/read/"))
-
-            collection-perm-clause
-            [:or
-             (when has-root-access? [:= :collection_id nil])
-             [:and
-              [:not= :collection_id nil]
-              [:or
-               (has-perm-clause "/collection/" :collection_id "/")
-               (has-perm-clause "/collection/" :collection_id "/read/")]]]]
-        (sql.helpers/where
-         query
-         collection-perm-clause)))))
+  [query {:keys [current-user-id is-superuser?]}]
+  (sql.helpers/where
+   query
+   (collection/visible-collection-filter-clause
+    :collection_id
+    {}
+    {:current-user-id current-user-id
+     :is-superuser?   is-superuser?})))
 
 (defmethod search-query-for-model "indexed-entity"
-  [model {:keys [current-user-perms] :as search-ctx}]
+  [model search-ctx]
   (-> (base-query-for-model model search-ctx)
       (sql.helpers/left-join [:model_index :model-index]
                              [:= :model-index.id :model-index-value.model_index_id])
       (sql.helpers/left-join [:report_card :model] [:= :model-index.model_id :model.id])
       (sql.helpers/left-join [:collection :collection] [:= :model.collection_id :collection.id])
-      (add-model-index-permissions-clause current-user-perms)))
+      (add-model-index-permissions-clause search-ctx)))
 
 (defmethod search-query-for-model "segment"
   [model search-ctx]
@@ -350,73 +337,65 @@
   {:arglists '([search-ctx search-result])}
   (fn [_search-ctx search-result] ((comp keyword :model) search-result)))
 
-(defn- assert-current-user-perms-set-is-bound
+(defmacro ^:private ensure-current-user-perms-set-is-bound
   "TODO FIXME -- search actually currently still requires [[metabase.api.common/*current-user-permissions-set*]] to be
   bound (since [[mi/can-write?]] and [[mi/can-read?]] depend on it) despite search context requiring
   `:current-user-perms` to be passed in. We should fix things so search works independently of API-specific dynamic
   variables. This might require updating `can-read?` and `can-write?` to take explicit perms sets instead of relying
   on dynamic variables."
-  []
-  (assert (seq @@(requiring-resolve 'metabase.api.common/*current-user-permissions-set*))
-          "metabase.api.common/*current-user-permissions-set* must be bound in order to check search permissions"))
+  {:style/indent 0}
+  [current-user-perms & body]
+  `(with-bindings {(requiring-resolve 'metabase.api.common/*current-user-permissions-set*) (atom ~current-user-perms)}
+     ~@body))
 
-(defn- can-write? [instance]
-  (assert-current-user-perms-set-is-bound)
-  (mi/can-write? instance))
+(defn- can-write? [{:keys [current-user-perms]} instance]
+  (ensure-current-user-perms-set-is-bound current-user-perms (mi/can-write? instance)))
 
-(defn- can-read? [instance]
-  (assert-current-user-perms-set-is-bound)
-  (mi/can-read? instance))
+(defn- can-read? [{:keys [current-user-perms]} instance]
+  (ensure-current-user-perms-set-is-bound current-user-perms (mi/can-read? instance)))
 
 (defmethod check-permissions-for-model :default
   [search-ctx instance]
   (if (:archived? search-ctx)
-    (can-write? instance)
-    ;; We filter what we can (ie. everything that is in a collection) out already when querying
+    (can-write? search-ctx instance)
+    ;; We filter what we can (i.e., everything in a collection) out already when querying
     true))
 
 (defmethod check-permissions-for-model :table
   [search-ctx instance]
   ;; we've already filtered out tables w/o collection permissions in the query itself.
-  (and
-   (data-perms/user-has-permission-for-table?
-    (:current-user-id search-ctx)
-    :perms/view-data
-    :unrestricted
-    (database/table-id->database-id (:id instance))
-    (:id instance))
-   (data-perms/user-has-permission-for-table?
-    (:current-user-id search-ctx)
-    :perms/create-queries
-    :query-builder
-    (database/table-id->database-id (:id instance))
-    (:id instance))))
+  (let [instance-id (:id instance)
+        user-id     (:current-user-id search-ctx)
+        db-id       (database/table-id->database-id instance-id)]
+    (and
+     (data-perms/user-has-permission-for-table? user-id :perms/view-data :unrestricted db-id instance-id)
+     (data-perms/user-has-permission-for-table? user-id :perms/create-queries :query-builder db-id instance-id))))
 
 (defmethod check-permissions-for-model :indexed-entity
   [search-ctx instance]
-  (and
-   (= :query-builder-and-native
-      (data-perms/full-db-permission-for-user (:current-user-id search-ctx) :perms/create-queries (:database_id instance)))
-   (= :unrestricted
-      (data-perms/full-db-permission-for-user (:current-user-id search-ctx) :perms/view-data (:database_id instance)))))
+  (let [user-id (:current-user-id search-ctx)
+        db-id   (:database_id instance)]
+    (and
+     (= :query-builder-and-native (data-perms/full-db-permission-for-user user-id :perms/create-queries db-id))
+     (= :unrestricted (data-perms/full-db-permission-for-user user-id :perms/view-data db-id)))))
 
 (defmethod check-permissions-for-model :metric
   [search-ctx instance]
   (if (:archived? search-ctx)
-    (can-write? instance)
-    (can-read? instance)))
+    (can-write? search-ctx instance)
+    (can-read? search-ctx instance)))
 
 (defmethod check-permissions-for-model :segment
   [search-ctx instance]
   (if (:archived? search-ctx)
-    (can-write? instance)
-    (can-read? instance)))
+    (can-write? search-ctx instance)
+    (can-read? search-ctx instance)))
 
 (defmethod check-permissions-for-model :database
   [search-ctx instance]
   (if (:archived? search-ctx)
-    (can-write? instance)
-    (can-read? instance)))
+    (can-write? search-ctx instance)
+    (can-read? search-ctx instance)))
 
 (mu/defn query-model-set :- [:set SearchableModel]
   "Queries all models with respect to query for one result to see if we get a result or not"
@@ -432,7 +411,7 @@
                   (map :model)
                   set))))
 
-(mu/defn- full-search-query
+(mu/defn full-search-query
   "Postgres 9 is not happy with the type munging it needs to do to make the union-all degenerate down to trivial case of
   one model without errors. Therefore we degenerate it down for it"
   [search-ctx :- SearchContext]
@@ -456,7 +435,7 @@
        :limit    search.config/*db-max-results*})))
 
 (defn- hydrate-user-metadata
-  "Hydrate common-name for last_edited_by and created_by from result."
+  "Hydrate common-name for last_edited_by and created_by for each result."
   [results]
   (let [user-ids             (set (flatten (for [result results]
                                              (remove nil? ((juxt :last_editor_id :creator_id) result)))))
@@ -490,8 +469,8 @@
     (map annotate search-results)))
 
 (defn- add-collection-effective-location
-  "Batch-hydrates :effective_location and :effective_parent on collection search results. Keeps search results in
-  order."
+  "Batch-hydrates `:effective_location` and `:effective_parent` on collection search results.
+  Keeps search results in order."
   [search-results]
   (let [collections    (filter #(mi/instance-of? :model/Collection %) search-results)
         hydrated-colls (t2/hydrate collections :effective_parent)
@@ -511,7 +490,8 @@
                       collection_authority_level collection_type collection_effective_ancestors effective_parent
                       archived_directly model]}]
   (let [matching-columns    (into #{} (remove nil? (map :column relevant-scores)))
-        match-context-thunk (first (keep :match-context-thunk relevant-scores))]
+        match-context-thunk (first (keep :match-context-thunk relevant-scores))
+        remove-thunks       (partial mapv #(dissoc % :match-context-thunk))]
     (-> result
         (assoc
          :name           (if (and (contains? matching-columns :display_name) display_name)
@@ -528,11 +508,11 @@
                                    :name            collection_name
                                    :authority_level collection_authority_level
                                    :type            collection_type}
-                                  ;; for  non-root collections, override :collection with the values for its effective parent
+                                  ;; for non-root collections, override :collection with the values for its effective parent
                                   effective_parent
                                   (when collection_effective_ancestors
                                     {:effective_ancestors collection_effective_ancestors})))
-         :scores          all-scores)
+         :scores          (remove-thunks all-scores))
         (update :dataset_query (fn [dataset-query]
                                  (when-let [query (some-> dataset-query json/parse-string)]
                                    (if (get query "type")
@@ -550,11 +530,6 @@
          :display_name
          :effective_parent))))
 
-(defn- add-can-write [row]
-  (if (some #(mi/instance-of? % row) [:model/Dashboard :model/Card])
-    (assoc row :can_write (can-write? row))
-    row))
-
 (defn- bit->boolean
   "Coerce a bit returned by some MySQL/MariaDB versions in some situations to Boolean."
   [v]
@@ -562,70 +537,34 @@
     (not (zero? v))
     v))
 
-(mu/defn search
-  "Builds a search query that includes all the searchable entities and runs it"
-  [search-ctx :- SearchContext]
-  (let [search-query       (full-search-query search-ctx)
-        _                  (log/tracef "Searching with query:\n%s\n%s"
-                                       (u/pprint-to-str search-query)
-                                       (mdb.query/format-sql (first (mdb.query/compile search-query))))
-        to-toucan-instance (fn [row]
-                             (let [model (-> row :model search.config/model-to-db-model :db-model)]
-                               (t2.instance/instance model row)))
-        reducible-results  (t2/reducible-query search-query)
-        xf                 (comp
-                            (take search.config/*db-max-results*)
-                            (map t2.realize/realize)
-                            (map to-toucan-instance)
-                            (map #(if (and (t2/instance-of? :model/Collection %)
-                                           (:archived_directly %))
-                                    (assoc % :location (collection/trash-path))
-                                    %))
-                            (map #(cond-> %
-                                    (t2/instance-of? :model/Collection %) (assoc :type (:collection_type %))))
-                            (map #(cond-> % (t2/instance-of? :model/Collection %) collection/maybe-localize-trash-name))
-                            ;; MySQL returns booleans as `1` or `0` so convert those to boolean as
-                            ;; needed
-                            (map #(update % :bookmark bit->boolean))
-                            (map #(update % :archived bit->boolean))
-                            (map #(update % :archived_directly bit->boolean))
+(def ^:private default-engine :in-place)
 
-                            (filter (partial check-permissions-for-model search-ctx))
+(defn- allowed-engine? [engine]
+  (case engine
+    :in-place true
+    :minimal  (public-settings/experimental-fulltext-search-enabled)
+    :fulltext (public-settings/experimental-fulltext-search-enabled)))
 
-                            (map #(update % :pk_ref json/parse-string))
-                            (map add-can-write)
-                            (map #(scoring/score-and-result % (select-keys search-ctx [:search-string :search-native-query])))
+(defn- parse-engine [value]
+  (or (when-not (str/blank? value)
+        (let [engine (keyword value)]
+          (cond
+            (not (contains? search.config/search-engines engine))
+            (log/warnf "Unknown search-engine: %s" value)
 
-                            (filter #(pos? (:score %))))
-        total-results       (cond->> (scoring/top-results reducible-results search.config/max-filtered-results xf)
-                              true                           hydrate-user-metadata
+            (not (allowed-engine? engine))
+            (log/warnf "Forbidden search-engine: %s" value)
 
-                              (:model-ancestors? search-ctx) (add-dataset-collection-hierarchy)
-                              true                           (add-collection-effective-location)
-                              true                           (map serialize))
-        add-perms-for-col  (fn [item]
-                             (cond-> item
-                               (mi/instance-of? :model/Collection item)
-                               (assoc :can_write (can-write? item))))]
-    ;; We get to do this slicing and dicing with the result data because
-    ;; the pagination of search is for UI improvement, not for performance.
-    ;; We intend for the cardinality of the search results to be below the default max before this slicing occurs
-    {:available_models (query-model-set search-ctx)
-     :data             (cond->> total-results
-                         (some? (:offset-int search-ctx)) (drop (:offset-int search-ctx))
-                         (some? (:limit-int search-ctx)) (take (:limit-int search-ctx))
-                         true (map add-perms-for-col))
-     :limit            (:limit-int search-ctx)
-     :models           (:models search-ctx)
-     :offset           (:offset-int search-ctx)
-     :table_db_id      (:table-db-id search-ctx)
-     :total            (count total-results)}))
+            :else
+            engine)))
+      default-engine))
 
 (mr/def ::search-context.input
   [:map {:closed true}
    [:search-string                                        [:maybe ms/NonBlankString]]
    [:models                                               [:maybe [:set SearchableModel]]]
    [:current-user-id                                      pos-int?]
+   [:is-superuser?                                        :boolean]
    [:current-user-perms                                   [:set perms.u/PathSchema]]
    [:archived                            {:optional true} [:maybe :boolean]]
    [:created-at                          {:optional true} [:maybe ms/NonBlankString]]
@@ -636,17 +575,19 @@
    [:limit                               {:optional true} [:maybe ms/Int]]
    [:offset                              {:optional true} [:maybe ms/Int]]
    [:table-db-id                         {:optional true} [:maybe ms/PositiveInt]]
+   [:search-engine                       {:optional true} [:maybe string?]]
    [:search-native-query                 {:optional true} [:maybe true?]]
    [:model-ancestors?                    {:optional true} [:maybe boolean?]]
    [:verified                            {:optional true} [:maybe true?]]
    [:ids                                 {:optional true} [:maybe [:set ms/PositiveInt]]]])
 
-(mu/defn search-context
+(mu/defn search-context :- SearchContext
   "Create a new search context that you can pass to other functions like [[search]]."
   [{:keys [archived
            created-at
            created-by
            current-user-id
+           is-superuser?
            current-user-perms
            last-edited-at
            last-edited-by
@@ -654,12 +595,13 @@
            models
            filter-items-in-personal-collection
            offset
+           search-engine
            search-string
            model-ancestors?
            table-db-id
            search-native-query
            verified
-           ids]}      :- ::search-context.input] :- SearchContext
+           ids]} :- ::search-context.input]
   ;; for prod where Malli is disabled
   {:pre [(pos-int? current-user-id) (set? current-user-perms)]}
   (when (some? verified)
@@ -669,6 +611,7 @@
   (let [models (if (string? models) [models] models)
         ctx    (cond-> {:archived?          (boolean archived)
                         :current-user-id    current-user-id
+                        :is-superuser?      is-superuser?
                         :current-user-perms current-user-perms
                         :model-ancestors?   (boolean model-ancestors?)
                         :models             models
@@ -681,6 +624,7 @@
                  (some? table-db-id)                         (assoc :table-db-id table-db-id)
                  (some? limit)                               (assoc :limit-int limit)
                  (some? offset)                              (assoc :offset-int offset)
+                 (some? search-engine)                       (assoc :search-engine (parse-engine search-engine))
                  (some? search-native-query)                 (assoc :search-native-query search-native-query)
                  (some? verified)                            (assoc :verified verified)
                  (seq ids)                                   (assoc :ids ids))]
@@ -688,3 +632,89 @@
                (not= (count models) 1))
       (throw (ex-info (tru "Filtering by ids work only when you ask for a single model") {:status-code 400})))
     (assoc ctx :models (search.filter/search-context->applicable-models ctx))))
+
+(defn in-place
+  "Return a reducible-query corresponding to searching the entities without an index."
+  [search-ctx]
+  (let [search-query (full-search-query search-ctx)]
+    (log/tracef "Searching with query:\n%s\n%s"
+                (u/pprint-to-str search-query)
+                (mdb.query/format-sql (first (mdb.query/compile search-query))))
+    (t2/reducible-query search-query)))
+
+(defn- to-toucan-instance [row]
+  (let [model (-> row :model search.config/model-to-db-model :db-model)]
+    (t2.instance/instance model row)))
+
+(defn- map-collection [collection]
+  (cond-> collection
+    (:archived_directly collection)
+    (assoc :location (collection/trash-path))
+    :always
+    (assoc :type (:collection_type collection))
+    :always
+    collection/maybe-localize-trash-name))
+
+(defn- normalize-result [result]
+  (let [instance (to-toucan-instance (t2.realize/realize result))]
+    (-> instance
+        ;; MySQL returns booleans as `1` or `0` so convert those to boolean as needed
+        (update :bookmark bit->boolean)
+        (update :archived bit->boolean)
+        (update :archived_directly bit->boolean)
+        ;; Collections require some transformation before being scored and returned by search.
+        (cond-> (t2/instance-of? :model/Collection instance) map-collection))))
+
+(defn- add-can-write [search-ctx row]
+  (if (some #(mi/instance-of? % row) [:model/Dashboard :model/Card])
+    (assoc row :can_write (can-write? search-ctx row))
+    row))
+
+(defn- normalize-result-more
+  "Additional normalization that is done after we've filtered by permissions, as its more expensive."
+  [search-ctx result]
+  (->> (update result :pk_ref json/parse-string)
+       (add-can-write search-ctx)))
+
+(defn- search-results [search-ctx model-set-fn total-results]
+  (let [add-perms-for-col  (fn [item]
+                             (cond-> item
+                               (mi/instance-of? :model/Collection item)
+                               (assoc :can_write (can-write? search-ctx item))))]
+    ;; We get to do this slicing and dicing with the result data because
+    ;; the pagination of search is for UI improvement, not for performance.
+    ;; We intend for the cardinality of the search results to be below the default max before this slicing occurs
+    {:available_models (model-set-fn search-ctx)
+     :data             (cond->> total-results
+                         (some? (:offset-int search-ctx)) (drop (:offset-int search-ctx))
+                         (some? (:limit-int search-ctx)) (take (:limit-int search-ctx))
+                         true (map add-perms-for-col))
+     :limit            (:limit-int search-ctx)
+     :models           (:models search-ctx)
+     :offset           (:offset-int search-ctx)
+     :table_db_id      (:table-db-id search-ctx)
+     :engine           (:search-engine search-ctx)
+     :total            (count total-results)}))
+
+(mu/defn search
+  "Builds a search query that includes all the searchable entities, and runs it."
+  ([search-ctx :- search.config/SearchContext]
+   (search in-place query-model-set scoring/score-and-result search-ctx))
+  ([results-fn
+    model-set-fn
+    score-fn
+    search-ctx :- search.config/SearchContext]
+   (let [reducible-results (results-fn search-ctx)
+         scoring-ctx       (select-keys search-ctx [:search-string :search-native-query])
+         xf                (comp
+                            (take search.config/*db-max-results*)
+                            (map normalize-result)
+                            (filter (partial check-permissions-for-model search-ctx))
+                            (map (partial normalize-result-more search-ctx))
+                            (keep #(score-fn % scoring-ctx)))
+         total-results     (cond->> (scoring/top-results reducible-results search.config/max-filtered-results xf)
+                             true                           hydrate-user-metadata
+                             (:model-ancestors? search-ctx) (add-dataset-collection-hierarchy)
+                             true                           (add-collection-effective-location)
+                             true                           (map serialize))]
+     (search-results search-ctx model-set-fn total-results))))

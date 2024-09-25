@@ -3,6 +3,7 @@
    [cheshire.core :as json]
    [clojure.string :as str]
    [flatland.ordered.map :as ordered-map]
+   [metabase.api.common :as api]
    [metabase.models.setting :refer [defsetting]]
    [metabase.permissions.util :as perms.u]
    [metabase.public-settings :as public-settings]
@@ -18,6 +19,12 @@
   :visibility :authenticated
   :export?    true
   :audit      :getter)
+
+(def search-engines
+  "Supported search engines."
+  #{:in-place
+    :fulltext
+    :minimal})
 
 (def ^:dynamic *db-max-results*
   "Number of raw results to fetch from the database. This number is in place to prevent massive application DB load by
@@ -44,18 +51,22 @@
   "Show this many words of context before/after matches in long search results"
   2)
 
+(def excluded-models
+  "Set of models that should not be included in search results."
+  #{"dashboard-card"
+    "dashboard-tab"
+    "dimension"
+    "permissions-group"
+    "pulse"
+    "pulse-card"
+    "pulse-channel"
+    "snippet"
+    "timeline"
+    "user"})
+
 (def model-to-db-model
   "Mapping from string model to the Toucan model backing it."
-  {"action"         {:db-model :model/Action :alias :action}
-   "card"           {:db-model :model/Card :alias :card}
-   "collection"     {:db-model :model/Collection :alias :collection}
-   "dashboard"      {:db-model :model/Dashboard :alias :dashboard}
-   "database"       {:db-model :model/Database :alias :database}
-   "dataset"        {:db-model :model/Card :alias :card}
-   "indexed-entity" {:db-model :model/ModelIndexValue :alias :model-index-value}
-   "metric"         {:db-model :model/Card :alias :card}
-   "segment"        {:db-model :model/Segment :alias :segment}
-   "table"          {:db-model :model/Table :alias :table}})
+  (apply dissoc api/model->db-model excluded-models))
 
 (def all-models
   "Set of all valid models to search for. "
@@ -101,6 +112,7 @@
    ;;
    [:archived?          [:maybe :boolean]]
    [:current-user-id    pos-int?]
+   [:is-superuser?      :boolean]
    [:current-user-perms [:set perms.u/PathSchema]]
    [:model-ancestors?   :boolean]
    [:models             [:set SearchableModel]]
@@ -115,6 +127,7 @@
    [:last-edited-by                      {:optional true} [:set {:min 1} ms/PositiveInt]]
    [:limit-int                           {:optional true} ms/Int]
    [:offset-int                          {:optional true} ms/Int]
+   [:search-engine                       {:optional true} (into [:enum] search-engines)]
    [:search-native-query                 {:optional true} true?]
    [:table-db-id                         {:optional true} ms/PositiveInt]
    ;; true to search for verified items only, nil will return all items
