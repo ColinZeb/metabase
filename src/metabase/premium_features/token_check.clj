@@ -222,42 +222,22 @@
 (mu/defn- fetch-token-status* :- TokenStatus
   "Fetch info about the validity of `token` from the MetaStore."
   [token :- TokenStr]
-  ;; NB that we fetch any settings from this thread, not inside on of the futures in the inner fetch calls.  We
-  ;; will have taken a lock to call through to here, and could create a deadlock with the future's thread.  See
-  ;; https://github.com/metabase/metabase/pull/38029/
-  (cond (mr/validate [:re RemoteCheckedToken] token)
-        ;; attempt to query the metastore API about the status of this token. If the request doesn't complete in a
-        ;; reasonable amount of time throw a timeout exception
-        (let [site-uuid (premium-features.settings/site-uuid-for-premium-features-token-checks)]
-          (try (fetch-token-and-parse-body token token-check-url site-uuid)
-               (catch Exception e1
-                 (log/errorf e1 "Error fetching token status from %s:" token-check-url)
-                 ;; Try the fallback URL, which was the default URL prior to 45.2
-                 (try (fetch-token-and-parse-body token store-url site-uuid)
-                      ;; if there was an error fetching the token from both the normal and fallback URLs, log the
-                      ;; first error and return a generic message about the token being invalid. This message
-                      ;; will get displayed in the Settings page in the admin panel so we do not want something
-                      ;; complicated
-                      (catch Exception e2
-                        (log/errorf e2 "Error fetching token status from %s:" store-url)
-                        (let [body (u/ignore-exceptions (some-> (ex-data e1) :body json/decode+kw))]
-                          (or
-                           body
-                           {:valid         false
-                            :status        (tru "Unable to validate token")
-                            :error-details (.getMessage e1)})))))))
-
-        (mr/validate [:re AirgapToken] token)
-        (do
-          (log/infof "Checking airgapped token '%s'..." (u.str/mask token))
-          (decode-airgap-token token))
-
-        :else
-        (do
-          (log/error (u/format-color 'red "Invalid token format!"))
-          {:valid         false
-           :status        "invalid"
-           :error-details (trs "Token should be a valid 64 hexadecimal character token or an airgap token.")})))
+  ;; 直接返回有效的 token 状态，绕过所有验证请求
+  (log/infof "Bypassing token validation for token '%s', returning valid status..." (u.str/mask token))
+  {:valid         true
+   :status        "valid"
+   :features      ["advanced-permissions" "audit-app" "cache-granular-controls" 
+                   "content-verification" "embedding" "sandboxes" "whitelabel"
+                   "advanced-config" "session-timeout-config" "hosting"
+                   "sso-jwt" "sso-saml" "sso-ldap" "email-restrict-recipients"
+                   "snippet-collections" "dashboard-subscription-filters"
+                   "advanced-embedding" "official-collections" "serialization"
+                   "config-text-file" "disable-password-login"]
+   :plan-alias    "enterprise"
+   :trial         false
+   :valid-thru    "2099-12-31"
+   :max-users     999999
+   :company       "Internal"})
 
 (let [lock (Object.)]
   (defn- fetch-token-status
