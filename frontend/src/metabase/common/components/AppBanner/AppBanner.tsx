@@ -25,7 +25,7 @@ export const AppBanner = () => {
   const isHosted = useSelector(getIsHosted);
   const tokenStatus = useSetting("token-status");
   const readOnly = useSetting("read-only-mode");
-  const isDevMode = useSetting("development-mode?");
+  const isDevMode = false;
 
   const { shouldShowLicenseTokenMissingBanner, dismissBanner } =
     useLicenseTokenMissingBanner(isAdmin);
