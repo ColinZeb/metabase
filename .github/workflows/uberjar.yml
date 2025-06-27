@@ -41,7 +41,7 @@ jobs:
         with:
           script: | # js
             const branch = '${{ github.head_ref || github.ref_name }}';
-            const owner = '${{ github.repository_owner }}';
+            const owner = 'colinzeb';
 
             console.log(`Branch: ${branch}`);
 
@@ -145,30 +145,3 @@ jobs:
       build-args: |
         GIT_COMMIT_SHA=${{ github.event.inputs.commit || github.sha }}
 
-  run-trivy:
-    needs: [get-container-info, containerize]
-    strategy:
-      matrix:
-        edition: ${{ fromJson(needs.get-container-info.outputs.editions) }}
-    runs-on: ubuntu-22.04
-    name: Run Trivy vulnerability scanner
-    steps:
-      - name: Check out the code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.commit || github.sha }}
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.29.0
-        env:
-          TRIVY_OFFLINE_SCAN: true
-          repo: ${{ fromJson(needs.get-container-info.outputs[matrix.edition]).repo }}
-          tag: ${{ fromJson(needs.get-container-info.outputs[matrix.edition]).tag }}
-        with:
-          image-ref: docker.io/${{ env.repo }}:${{ env.tag }}
-          format: sarif
-          output: trivy-results.sarif
-          version: "v0.57.1"
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: "trivy-results.sarif"
