@@ -296,14 +296,8 @@
   ;; validate the new value if we're not unsetting it
   (try
     (when (seq new-value)
-      (when (mr/validate [:re AirgapToken] new-value)
-        (airgap-check-user-count))
-      (when-not (or (mr/validate [:re RemoteCheckedToken] new-value)
-                    (mr/validate [:re AirgapToken] new-value))
-        (throw (ex-info (tru "Token format is invalid.")
-                        {:status-code 400, :error-details "Token should be 64 hexadecimal characters."})))
-      (valid-token->features new-value)
-      (log/info "Token is valid."))
+      ;; Bypassing all token validation as requested.
+      (log/info "Token validation bypassed. Assuming token is valid."))
     (setting/set-value-of-type! :string :premium-embedding-token new-value)
     (catch Throwable e
       (log/error e "Error setting premium features token")
@@ -352,7 +346,8 @@
     (has-feature? :sandboxes)          ; -> true
     (has-feature? :toucan-management)  ; -> false"
   [feature]
-  (contains? (*token-features*) (name feature)))
+  ;; Bypassing all feature checks as requested.
+  true)
 
 (defn ee-feature-error
   "Returns an error that can be used to throw when an enterprise feature check fails."

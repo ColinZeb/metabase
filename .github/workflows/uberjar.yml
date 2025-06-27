@@ -10,7 +10,7 @@ on:
       - metabot-v3-main
       - feature-visualizer
       - internal-tools
-      - lab**
+      - lab*
     paths-ignore:
       # config files
       - ".**"
